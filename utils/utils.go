@@ -33,24 +33,24 @@ func RequestAPIKey() {
 
 		// prepare request payload
 		type Payload struct {
-			MacAddr  string `json:"macAddr"`
+			MacAdr   string `json:"macAdr"`
 			Name     string `json:"name"`
 			Location string `json:"location"`
 		}
 
 		payload := Payload{
-			MacAddr:  macAddr,
+			MacAdr:   macAddr,
 			Name:     os.Getenv("NAME"),
 			Location: os.Getenv("LOCATION"),
 		}
-		data, err := sendPostRequest(os.Getenv("API_URI")+"/camera/initCamera", payload)
+		data, err := sendPostRequest(os.Getenv("API_URI")+"/cameras/initCamera", payload)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		log.Println("API Key: ", data["apiKey"].(string))
 		err = addKeyIntoEnv("API_KEY", data["apiKey"].(string))
-	} 
+	}
 }
 
 // check if the given key is exist in the .env file
