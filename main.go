@@ -146,6 +146,7 @@ func generateUuid() error {
 func handleEvent(message types.Message, ws *ws.WS) {
 	switch message.Event {
 	case "welcome":
+		//! DEPRECATED: this will be auto-detected when camera connected to server with the api-key in headers
 		type Payload struct {
 			UUID     string `json:"uuid"`
 			Name     string `json:"name"`
@@ -168,10 +169,35 @@ func handleEvent(message types.Message, ws *ws.WS) {
 		}
 		break
 	case "new-client-connected":
+		// received the new uuid of client
+		log.Printf("[handleEvent]: %v", message.Payload)
+		piRTC.NewConnection(message.Payload.(string))
+		log.Println("[handleEvent]:", piRTC.ListPeer)
 
+		// register
 		break
+
+	case "list-clients-connected":
+		// received list uuid of clients in payload
+		log.Printf("[handleEvent]: %v", message.Payload)
+		// convert to array
+		listClient := utils.ConvertToTypedArray(message.Payload.([]interface{}))
+		for _, value := range listClient.([]string) {
+			piRTC.NewConnection(value)
+		}
+		log.Println("[handleEvent]:", piRTC.ListPeer)
+		break
+
+	case "client-disconnected":
+		log.Printf("[handleEvent]: %v", message.Payload)
+		piRTC.RemoveConnection(message.Payload.(string))
+		log.Println("[handleEvent]:", piRTC.ListPeer)
+
 	default:
 		log.Println("[handleEvent]: Invalid event")
+		log.Printf("[handleEvent]: %v", message.Event)
+		log.Printf("[handleEvent]: %v", message.Payload)
+
 	}
 }
 

@@ -2,6 +2,7 @@ package wrtc
 
 import (
 	"errors"
+	"log"
 
 	"github.com/pion/mediadevices"
 	"github.com/pion/webrtc/v3"
@@ -62,8 +63,18 @@ func (wrtc *WRTC) NewConnection(uuid string) error {
 		return errors.New("Client exist!")
 	} else {
 		wrtc.ListPeer[uuid] = nil
+		log.Printf("[%s] added", uuid)
 	}
 	return nil
+}
+
+func (wrtc *WRTC) Answer(uuid string, offerSD []byte) ([]byte, error) {
+	if peer, ok := wrtc.ListPeer[uuid]; ok {
+		if peer == nil {
+
+		}
+	}
+	return nil, nil
 }
 
 func (wrtc *WRTC) RemoveConnection(uuid string) error {

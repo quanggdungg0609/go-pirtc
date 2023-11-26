@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 
 	"github.com/joho/godotenv"
 )
@@ -150,4 +151,20 @@ func sendPostRequest(url string, data interface{}) (map[string]interface{}, erro
 		return nil, err
 	}
 	return result, nil
+}
+
+func ConvertToTypedArray(slice []interface{}) interface{} {
+
+	if len(slice) == 0 {
+		return nil
+	}
+	// detect type of element in first case of slice
+	elementType := reflect.TypeOf(slice[0])
+
+	// create a new slice with the type and copy data
+	result := reflect.MakeSlice(reflect.SliceOf(elementType), len(slice), len(slice))
+	for index, value := range slice {
+		result.Index(index).Set(reflect.ValueOf(value))
+	}
+	return result.Interface()
 }
