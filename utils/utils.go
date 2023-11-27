@@ -34,17 +34,19 @@ func RequestAPIKey() {
 
 		// prepare request payload
 		type Payload struct {
-			MacAdr   string `json:"macAdr"`
+			MacAdr   string `json:"macAddr"`
+			Uuid     string `json:"uuid"`
 			Name     string `json:"name"`
 			Location string `json:"location"`
 		}
 
 		payload := Payload{
 			MacAdr:   macAddr,
+			Uuid:     os.Getenv("UUID"),
 			Name:     os.Getenv("NAME"),
 			Location: os.Getenv("LOCATION"),
 		}
-		data, err := sendPostRequest(os.Getenv("API_URI")+"/cameras/initCamera", payload)
+		data, err := sendPostRequest(os.Getenv("API_URI")+"/cameras/register", payload)
 		if err != nil {
 			log.Println(err)
 			return

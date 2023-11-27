@@ -19,6 +19,8 @@ import (
 	"gitlab.lanestel.net/quangdung/gortc/utils"
 )
 
+//TODO: Need to make a goroutine verify if api key exist in .env then allow to connect to websocket
+
 var socketMutex = sync.Mutex{}
 var socketCond = sync.NewCond(&socketMutex)
 var socket *ws.WS
@@ -193,6 +195,24 @@ func handleEvent(message types.Message, ws *ws.WS) {
 		piRTC.RemoveConnection(message.Payload.(string))
 		log.Println("[handleEvent]:", piRTC.ListPeer)
 
+	case "offer":
+		log.Println("[handleEvent]: Offer Event")
+		// type assertion to string
+		uuid := message.Payload.(map[string]interface{})["from"].(string)
+		offerSD := wrtc.ConvertToSD(message.Payload.(map[string]interface{})["sessionDescription"])
+		// create a answer from uuid client and offer session description given
+		answerSD, err := piRTC.Answer(uuid, offerSD)
+		if err != nil {
+			log.Println("[handleEvent]: Offer Event Error: ", err)
+		}
+		message, err := wrtc.PayloadPackaging(os.Getenv("UUID"), uuid, answerSD)
+		if err != nil {
+			log.Println("[handleEvent]: Offer Event Error: ", err)
+		}
+		err = ws.SendMessage(message)
+		if err != nil {
+			log.Printf("[handleEvent Error] %v", err)
+		}
 	default:
 		log.Println("[handleEvent]: Invalid event")
 		log.Printf("[handleEvent]: %v", message.Event)
