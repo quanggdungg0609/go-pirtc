@@ -1,4 +1,4 @@
-package wrtc
+package pigortc
 
 import (
 	"errors"
@@ -21,7 +21,8 @@ var config = webrtc.Configuration{
 	},
 }
 
-type WRTC struct {
+type PiGoRTC struct {
+	isUseCamera bool
 	device      mediadevices.MediaStream
 	mediaEngine webrtc.MediaEngine
 	ListPeer    map[string]*webrtc.PeerConnection
@@ -76,17 +77,18 @@ func PayloadPackaging(uuid string, clientUUID string, sd *webrtc.SessionDescript
 	return message, nil
 }
 
-func InitRTC() *WRTC {
-	wrtc := WRTC{
+func InitRTC() *PiGoRTC {
+	pigortc := PiGoRTC{
+		isUseCamera: false,
 		device:      nil,
 		mediaEngine: webrtc.MediaEngine{},
 		ListPeer:    make(map[string]*webrtc.PeerConnection),
 	}
-	return &wrtc
+	return &pigortc
 }
 
-func (wrtc *WRTC) enableMediaStream() error {
-	if wrtc.device == nil {
+func (pigortc *PiGoRTC) enableMediaStream() error {
+	if pigortc.device == nil {
 		// select codec VP8
 		VPXParams, err := vpx.NewVP8Params()
 		if err != nil {
@@ -97,10 +99,10 @@ func (wrtc *WRTC) enableMediaStream() error {
 			mediadevices.WithVideoEncoders(&VPXParams),
 		)
 
-		codecSelector.Populate(&wrtc.mediaEngine)
+		codecSelector.Populate(&pigortc.mediaEngine)
 
 		// open media devices with constraint
-		wrtc.device, err = mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
+		pigortc.device, err = mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
 			Video: func(constraint *mediadevices.MediaTrackConstraints) {
 				constraint.FrameFormat = prop.FrameFormat(frame.FormatI420)
 				constraint.Width = prop.Int(1280)
@@ -111,42 +113,43 @@ func (wrtc *WRTC) enableMediaStream() error {
 		if err != nil {
 			return err
 		}
+		pigortc.isUseCamera = true
 	}
 	return nil
 }
 
-func (wrtc *WRTC) NewConnection(uuid string) error {
+func (pigortc *PiGoRTC) NewConnection(uuid string) error {
 	// allocate a place with the key is uuid of client
-	if _, ok := wrtc.ListPeer[uuid]; ok {
-		return errors.New("Client exist!")
+	if _, ok := pigortc.ListPeer[uuid]; ok {
+		return errors.New("client exist!")
 	} else {
-		wrtc.ListPeer[uuid] = nil
+		pigortc.ListPeer[uuid] = nil
 		log.Printf("[%s] added", uuid)
 	}
 	return nil
 }
 
 // create a answer session description from a offer Session Description
-func (wrtc *WRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
-	if wrtc.device == nil {
-		wrtc.enableMediaStream()
+func (pigortc *PiGoRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
+	if pigortc.device == nil {
+		pigortc.enableMediaStream()
 	}
-	peer, ok := wrtc.ListPeer[uuid]
+	peer, ok := pigortc.ListPeer[uuid]
 	if !ok {
-		return nil, errors.New("Client not exists")
+		return nil, errors.New("client not exists")
 	}
 	if peer != nil {
-		return nil, errors.New("Peer exists")
+		return nil, errors.New("peer exists")
 	}
 
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(&wrtc.mediaEngine))
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(&pigortc.mediaEngine))
 	peer, err := api.NewPeerConnection(config)
 	if err != nil {
 		return nil, err
 	}
 
 	// add track into peer
-	for _, track := range wrtc.device.GetTracks() {
+	for _, track := range pigortc.device.GetTracks() {
 		track.OnEnded(func(err error) {
 			log.Printf("Track (ID: %s) ended with error: %v\n", track.ID(), err)
 		})
@@ -160,6 +163,22 @@ func (wrtc *WRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrt
 			return nil, err
 		}
 	}
+
+	// handlers for peer connection state
+	peer.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+		log.Printf("[Peer Connection State - %s]: %s", uuid, s.String())
+		if s == webrtc.PeerConnectionStateClosed {
+			log.Printf("[Peer - %s]: peer closed", uuid)
+		}
+		// if s == webrtc.PeerConnectionStateClosed {
+		// 	log.Printf("[Peer - %s]: remove from the list", uuid)
+		// 	delete(pigortc.ListPeer, uuid)
+		// }
+	})
+
+	// peer.OnSignalingStateChange(func(s webrtc.SignalingState) {
+	// 	log.Printf("[Peer Signaling State - %s]: %s", uuid, s.String())
+	// })
 
 	// Set the remote SessionDescription
 	err = peer.SetRemoteDescription(offerSD)
@@ -184,18 +203,24 @@ func (wrtc *WRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrt
 	// we do this because we only can exchange one signaling message
 	// in a production application you should exchange ICE Candidates via OnICECandidate
 	<-gatherComplete
+	pigortc.ListPeer[uuid] = peer
 	return peer.LocalDescription(), nil
 }
 
-func (wrtc *WRTC) RemoveConnection(uuid string) error {
-	if _, ok := wrtc.ListPeer[uuid]; ok {
+func (pigortc *PiGoRTC) RemoveConnection(uuid string) error {
+	if peer, ok := pigortc.ListPeer[uuid]; ok && peer != nil {
 		// condition to verify if client have a peer connection, disconnect first and remove
-
-		//
+		peer.Close()
 		// remove client from the list
-		delete(wrtc.ListPeer, uuid)
+		delete(pigortc.ListPeer, uuid)
+		// verify if it is the last peer in the list, close the camera
+
 	} else {
 		return errors.New("UUID does not exist")
 	}
+	return nil
+}
+
+func (pigortc *PiGoRTC) DisconnectPeer(uuid string) error {
 	return nil
 }

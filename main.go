@@ -13,9 +13,9 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/pion/mediadevices/pkg/driver/camera"
 
+	"gitlab.lanestel.net/quangdung/gortc/internals/pigortc"
 	"gitlab.lanestel.net/quangdung/gortc/internals/types"
 	ws "gitlab.lanestel.net/quangdung/gortc/internals/websocket"
-	"gitlab.lanestel.net/quangdung/gortc/internals/wrtc"
 	"gitlab.lanestel.net/quangdung/gortc/utils"
 )
 
@@ -24,7 +24,7 @@ import (
 var socketMutex = sync.Mutex{}
 var socketCond = sync.NewCond(&socketMutex)
 var socket *ws.WS
-var piRTC *wrtc.WRTC
+var piGoRTC *pigortc.PiGoRTC
 
 func main() {
 	//load .env
@@ -63,7 +63,7 @@ func main() {
 	socketCond.L.Unlock()
 
 	// init a list peer webrtc ready to use
-	piRTC = wrtc.InitRTC()
+	piGoRTC = pigortc.InitRTC()
 
 	if err != nil {
 		log.Printf("[Websocket Connect Error]: %v", err)
@@ -147,37 +147,12 @@ func generateUuid() error {
 // handle the actions depend the event message received
 func handleEvent(message types.Message, ws *ws.WS) {
 	switch message.Event {
-	case "welcome":
-		//! DEPRECATED: this will be auto-detected when camera connected to server with the api-key in headers
-		type Payload struct {
-			UUID     string `json:"uuid"`
-			Name     string `json:"name"`
-			Location string `json:"location"`
-		}
 
-		payload := Payload{
-			UUID:     os.Getenv("UUID"),
-			Name:     os.Getenv("NAME"),
-			Location: os.Getenv("LOCATION"),
-		}
-
-		data := types.Message{
-			Event:   "register",
-			Payload: payload,
-		}
-		err := ws.SendMessage(data)
-		if err != nil {
-			log.Printf("[handleEvent Error] %v", err)
-		}
-		break
 	case "new-client-connected":
 		// received the new uuid of client
 		log.Printf("[handleEvent]: %v", message.Payload)
-		piRTC.NewConnection(message.Payload.(string))
-		log.Println("[handleEvent]:", piRTC.ListPeer)
-
-		// register
-		break
+		piGoRTC.NewConnection(message.Payload.(string))
+		log.Println("[handleEvent]:", piGoRTC.ListPeer)
 
 	case "list-clients-connected":
 		// received list uuid of clients in payload
@@ -185,27 +160,26 @@ func handleEvent(message types.Message, ws *ws.WS) {
 		// convert to array
 		listClient := utils.ConvertToTypedArray(message.Payload.([]interface{}))
 		for _, value := range listClient.([]string) {
-			piRTC.NewConnection(value)
+			piGoRTC.NewConnection(value)
 		}
-		log.Println("[handleEvent]:", piRTC.ListPeer)
-		break
+		log.Println("[handleEvent]:", piGoRTC.ListPeer)
 
 	case "client-disconnected":
 		log.Printf("[handleEvent]: %v", message.Payload)
-		piRTC.RemoveConnection(message.Payload.(string))
-		log.Println("[handleEvent]:", piRTC.ListPeer)
+		piGoRTC.RemoveConnection(message.Payload.(string))
+		log.Println("[handleEvent]:", piGoRTC.ListPeer)
 
 	case "offer":
 		log.Println("[handleEvent]: Offer Event")
 		// type assertion to string
 		uuid := message.Payload.(map[string]interface{})["from"].(string)
-		offerSD := wrtc.ConvertToSD(message.Payload.(map[string]interface{})["sessionDescription"])
+		offerSD := pigortc.ConvertToSD(message.Payload.(map[string]interface{})["sessionDescription"])
 		// create a answer from uuid client and offer session description given
-		answerSD, err := piRTC.Answer(uuid, offerSD)
+		answerSD, err := piGoRTC.Answer(uuid, offerSD)
 		if err != nil {
 			log.Println("[handleEvent]: Offer Event Error: ", err)
 		}
-		message, err := wrtc.PayloadPackaging(os.Getenv("UUID"), uuid, answerSD)
+		message, err := pigortc.PayloadPackaging(os.Getenv("UUID"), uuid, answerSD)
 		if err != nil {
 			log.Println("[handleEvent]: Offer Event Error: ", err)
 		}
