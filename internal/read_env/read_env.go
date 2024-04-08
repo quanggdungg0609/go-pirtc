@@ -8,13 +8,13 @@ import (
 )
 
 type Env struct {
-	apiKey   string
-	apiUri   string
-	wsUri    string
-	uuid     string
-	macAdr   string
-	name     string
-	location string
+	ApiKey   string
+	ApiUri   string
+	WsUri    string
+	Uuid     string
+	MacAdr   string
+	Name     string
+	Location string
 }
 
 func ReadEnv() (*Env, error) {
@@ -51,15 +51,48 @@ func ReadEnv() (*Env, error) {
 		}
 	} else {
 		apiKey = os.Getenv("API_KEY")
+		isValid, err := checkApiKeyValid(apiKey)
+		if err != nil {
+			return nil, errors.New("CANNOT VERIFY API KEY")
+		}
+		if !isValid {
+			return nil, errors.New("API KEY IS NOT VALID")
+		}
 	}
 
-	return &Env{
-		uuid:     uuidDevice,
-		name:     nameDevice,
-		location: locationDevice,
-		macAdr:   macAdrDevice,
-		apiUri:   apiUri,
-		wsUri:    wsUri,
-		apiKey:   apiKey,
-	}, nil
+	env := Env{
+		Uuid:     uuidDevice,
+		Name:     nameDevice,
+		Location: locationDevice,
+		MacAdr:   macAdrDevice,
+		ApiUri:   apiUri,
+		WsUri:    wsUri,
+		ApiKey:   apiKey,
+	}
+	err = env.Save()
+	if err != nil {
+		return nil, errors.New("FAILED TO SAVE .ENV FILE")
+	}
+	return &env, nil
+}
+
+func (env Env) toMap() map[string]string {
+	envMap := make(map[string]string)
+	envMap["API_KEY"] = env.ApiKey
+	envMap["API_URI"] = env.ApiUri
+	envMap["WS_URI"] = env.WsUri
+	envMap["UUID"] = env.Uuid
+	envMap["MAC_ADR"] = env.MacAdr
+	envMap["NAME"] = env.Name
+	envMap["LOCATION"] = env.Location
+	return envMap
+}
+
+func (env Env) Save() error {
+	envMap := env.toMap()
+	err := godotenv.Write(envMap, ".env")
+	if err != nil {
+		return err
+	}
+	return nil
 }
