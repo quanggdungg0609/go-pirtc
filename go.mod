@@ -4,12 +4,14 @@ go 1.21.4
 
 replace github.com/pion/mediadevices v0.0.0 => ./internal/mediadevices/
 
-require github.com/gorilla/websocket v1.5.1
+require (
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.1
+)
 
 require (
 	github.com/blackjack/webcam v0.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
 	github.com/pion/dtls/v2 v2.2.7 // indirect
 	github.com/pion/ice/v2 v2.3.13 // indirect

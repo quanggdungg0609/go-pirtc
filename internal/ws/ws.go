@@ -36,12 +36,15 @@ func Connect(uri string, header http.Header) (*WS, error) {
 		ws.header = header
 		ws.ws, _, err = websocket.DefaultDialer.Dial(uri, header)
 		if err != nil {
+			log.Print(err)
 			return nil, err
 		}
 	} else {
 		ws.uri = uri
 		ws.ws, _, err = websocket.DefaultDialer.Dial(uri, nil)
 		if err != nil {
+			log.Print(err)
+
 			return nil, err
 		}
 	}
