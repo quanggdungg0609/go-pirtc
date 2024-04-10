@@ -26,7 +26,7 @@ type PiRTC struct {
 	isCameraUsed bool
 	device       mediadevices.MediaStream
 	mediaEngine  webrtc.MediaEngine
-	ListPeer     map[string]*webrtc.PeerConnection
+	Connections  map[string]*webrtc.PeerConnection
 	mu           sync.Mutex
 }
 
@@ -35,9 +35,18 @@ func Init() *PiRTC {
 		isCameraUsed: false,
 		device:       nil,
 		mediaEngine:  webrtc.MediaEngine{},
-		ListPeer:     make(map[string]*webrtc.PeerConnection),
+		Connections:  make(map[string]*webrtc.PeerConnection),
 	}
 	return &pirtc
+}
+
+func (pirtc *PiRTC) NewConnection(uuid string) error {
+	if _, ok := pirtc.Connections[uuid]; ok {
+		return errors.New("CLIENT EXIST")
+	} else {
+		pirtc.Connections[uuid] = nil
+	}
+	return nil
 }
 
 func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
@@ -48,7 +57,7 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 		}
 	}
 	pirtc.mu.Lock()
-	peer, ok := pirtc.ListPeer[uuid]
+	peer, ok := pirtc.Connections[uuid]
 	if !ok {
 		return nil, errors.New("CLIENT NOT EXISTS")
 	}
@@ -101,7 +110,7 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	}
 	<-gatherComplete
 
-	pirtc.ListPeer[uuid] = peer
+	pirtc.Connections[uuid] = peer
 	pirtc.mu.Unlock()
 	return peer.LocalDescription(), nil
 }

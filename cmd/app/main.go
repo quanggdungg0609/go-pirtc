@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"runtime"
 
+	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
 )
@@ -23,13 +24,14 @@ func main() {
 		panic(err)
 	}
 
+	prtc := pirtc.Init()
 	// connect to websocket
 	wsClient, err := ws.Connect(env.WsUri, nil)
 	if err != nil {
 		panic(err)
 	}
 	//create callbacks for each event
-	callbacks := createCallBacks()
+	callbacks := createCallBacks(prtc)
 
 	go wsClient.ListenAndServe(callbacks, disconnectChan)
 
@@ -44,12 +46,28 @@ func main() {
 	}
 }
 
-func createCallBacks() map[string]func(interface{}) {
+func createCallBacks(prtc *pirtc.PiRTC) map[string]func(interface{}) {
 	callbacks := make(map[string]func(interface{}))
 
-	callbacks["hello"] = func(message interface{}) {
+	callbacks["hello"] = func(payload interface{}) {
 		log.Println("hello")
 	}
+
+	callbacks["new-client-connected"] = func(payload interface{}) {
+		prtc.NewConnection(payload.(string))
+	}
+
+	callbacks["list-clients"] = func(payload interface{}) {
+
+	}
+
+	callbacks["client-disconnect"] = func(payload interface{}) {}
+
+	callbacks["offer-sd"] = func(payload interface{}) {
+
+	}
+
+	callbacks["ice-candidate"] = func(payload interface{}) {}
 
 	return callbacks
 }
