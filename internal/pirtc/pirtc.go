@@ -41,7 +41,7 @@ func Init() (*PiRTC, error) {
 	if err != nil {
 		return nil, err
 	}
-	VP8Params.BitRate = 500_000 // 5Kbps
+	VP8Params.BitRate = 1_000_000 // 5Kbps
 
 	pirtc := PiRTC{
 		isCameraUsed: false,
@@ -169,6 +169,7 @@ func (pirtc *PiRTC) enableStream() error {
 		pirtc.isCameraUsed = true
 		pirtc.mu.Unlock()
 	}
+	log.Println("Camera Enabled")
 	return nil
 }
 
@@ -195,7 +196,7 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	* Take a shot and save with the name given
 	* @param name the name of the file will saved
 	 */
-	if !pirtc.isCameraUsed {
+	if pirtc.stream == nil {
 		if err := pirtc.enableStream(); err != nil {
 			panic(err)
 		}
@@ -218,30 +219,37 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 		panic(err)
 	}
 
-	if len(pirtc.Connections) != 0 {
-		pirtc.disableStream()
-	}
-
 	return nil
 }
 
 func (pirtc *PiRTC) Record(second int) error {
 	//TODO: need to implement
-	if !pirtc.isCameraUsed {
+	if pirtc.stream == nil {
 		pirtc.enableStream()
 	}
 	saver := newWebmSaver()
-	// dest := getCurrentTimeStr() + ".webM"
+	dest := getCurrentTimeStr() + ".webM"
+	log.Println(pirtc.stream)
 	videoTrack := pirtc.stream.GetVideoTracks()[0].(*mediadevices.VideoTrack)
 
 	reader, err := videoTrack.NewRTPReader(pirtc.params.RTPCodec().MimeType, rand.Uint32(), 1000)
 	if err != nil {
 		return err
 	}
+	timer := time.NewTimer(time.Duration(second) * time.Second)
 	defer reader.Close()
-	rtpPacket, release, error := reader.Read()
-
-	return nil
+	for {
+		rtpPacket, release, _ := reader.Read()
+		select {
+		case <-timer.C:
+			defer release()
+			return nil
+		default:
+			for _, pkt := range rtpPacket {
+				saver.PushVP8(dest, pkt)
+			}
+		}
+	}
 }
 
 func getCurrentTimeStr() string {

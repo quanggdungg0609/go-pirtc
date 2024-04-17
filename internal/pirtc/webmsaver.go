@@ -30,7 +30,7 @@ func (s *webmSaver) Close() {
 	}
 }
 
-func (s *webmSaver) PushVP8(rtpPacket *rtp.Packet) {
+func (s *webmSaver) PushVP8(path string, rtpPacket *rtp.Packet) {
 	s.videoBuilder.Push(rtpPacket)
 
 	for {
@@ -48,7 +48,7 @@ func (s *webmSaver) PushVP8(rtpPacket *rtp.Packet) {
 
 			if s.videoWriter == nil {
 				// Initialize WebM saver using received frame size.
-				s.InitWriter(width, height)
+				s.InitWriter(path, width, height)
 			}
 		}
 		if s.videoWriter != nil {
@@ -60,8 +60,8 @@ func (s *webmSaver) PushVP8(rtpPacket *rtp.Packet) {
 	}
 }
 
-func (s *webmSaver) InitWriter(width, height int) {
-	w, err := os.OpenFile("test.webm", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+func (s *webmSaver) InitWriter(path string, width, height int) {
+	w, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		panic(err)
 	}
@@ -84,5 +84,5 @@ func (s *webmSaver) InitWriter(width, height int) {
 	if err != nil {
 		panic(err)
 	}
-	s.videoWriter = ws[1]
+	s.videoWriter = ws[0]
 }
