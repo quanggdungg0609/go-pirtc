@@ -18,13 +18,8 @@ type WS struct {
 }
 
 type WsMessage struct {
-	Event   string      `json:"event"`
-	Payload interface{} `json:"payload"`
-}
-
-type sendMessage struct {
-	Event string    `json:"event"`
-	Data  WsMessage `json:"data"`
+	Event string      `json:"event"`
+	Data  interface{} `json:"data"`
 }
 
 // * Connect to the websocket, if a header given connect with this header
@@ -51,21 +46,13 @@ func Connect(uri string, header http.Header) (*WS, error) {
 	return &ws, nil
 }
 
-func createMessage(data WsMessage) ([]byte, error) {
-	message := sendMessage{
-		Event: "message",
-		Data:  data,
+func (ws *WS) EmitMessage(event string, payload interface{}) error {
+	message := WsMessage{
+		Event: event,
+		Data:  payload,
 	}
 
 	bMessage, err := json.Marshal(message)
-	if err != nil {
-		return nil, err
-	}
-	return bMessage, nil
-}
-
-func (ws *WS) EmitMessage(mess WsMessage) error {
-	message, err := createMessage(mess)
 	if err != nil {
 		return err
 	}
@@ -73,7 +60,7 @@ func (ws *WS) EmitMessage(mess WsMessage) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 
-	err = ws.ws.WriteMessage(websocket.TextMessage, message)
+	err = ws.ws.WriteMessage(websocket.TextMessage, bMessage)
 	if err != nil {
 		return err
 	}
@@ -105,9 +92,10 @@ func (ws *WS) ListenAndServe(callbacks map[string]func(interface{}), disconnect 
 			}
 
 			if callback, ok := callbacks[message.Event]; ok {
-				callback(message.Payload)
+				log.Printf("Received event [%s]: %v\n", message.Event, message.Data)
+				callback(message.Data)
 			} else {
-				log.Printf("Received event [%s]: %s\n", message.Event, message.Payload)
+				log.Printf("Received event [%s]: %s\n", message.Event, message.Data)
 			}
 		}
 	}

@@ -2,7 +2,9 @@ package pirtc
 
 import (
 	"errors"
+	"image/jpeg"
 	"log"
+	"os"
 	"sync"
 
 	"github.com/pion/mediadevices"
@@ -24,7 +26,7 @@ var defaultConfig = webrtc.Configuration{
 
 type PiRTC struct {
 	isCameraUsed bool
-	device       mediadevices.MediaStream
+	stream       mediadevices.MediaStream
 	mediaEngine  webrtc.MediaEngine
 	Connections  map[string]*webrtc.PeerConnection
 	mu           sync.Mutex
@@ -33,25 +35,44 @@ type PiRTC struct {
 func Init() *PiRTC {
 	pirtc := PiRTC{
 		isCameraUsed: false,
-		device:       nil,
+		stream:       nil,
 		mediaEngine:  webrtc.MediaEngine{},
 		Connections:  make(map[string]*webrtc.PeerConnection),
 	}
 	return &pirtc
 }
 
-func (pirtc *PiRTC) NewConnection(uuid string) error {
+func (pirtc *PiRTC) NewUser(uuid string) error {
 	if _, ok := pirtc.Connections[uuid]; ok {
-		return errors.New("CLIENT EXIST")
+		return errors.New("USER EXIST")
 	} else {
 		pirtc.Connections[uuid] = nil
 	}
 	return nil
 }
 
+func (pirtc *PiRTC) UserDisconnect(uuid string) error {
+	if _, ok := pirtc.Connections[uuid]; ok {
+		pirtc.mu.Lock()
+		if pirtc.Connections[uuid] != nil {
+			err := pirtc.Connections[uuid].Close()
+			if err != nil {
+				return err
+			}
+			pirtc.Connections[uuid] = nil
+		}
+		delete(pirtc.Connections, uuid)
+		pirtc.mu.Unlock()
+	} else {
+		return errors.New("USER NOT FOUND")
+	}
+
+	return nil
+}
+
 func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
-	if pirtc.device == nil {
-		err := pirtc.enableDevice()
+	if pirtc.stream == nil {
+		err := pirtc.enableStream()
 		if err != nil {
 			return nil, err
 		}
@@ -59,19 +80,18 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	pirtc.mu.Lock()
 	peer, ok := pirtc.Connections[uuid]
 	if !ok {
-		return nil, errors.New("CLIENT NOT EXISTS")
+		return nil, errors.New("USER NOT EXISTS")
 	}
 	if peer != nil {
 		return nil, errors.New("PEER CONNECTION")
 	}
-
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&pirtc.mediaEngine))
 	peer, err := api.NewPeerConnection(defaultConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, track := range pirtc.device.GetTracks() {
+	for _, track := range pirtc.stream.GetTracks() {
 		track.OnEnded(func(err error) {
 			if err != nil {
 				log.Printf("Track error: %v\n", err)
@@ -115,12 +135,14 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	return peer.LocalDescription(), nil
 }
 
-func (pirtc *PiRTC) record(second int) {
-
+func (pirtc *PiRTC) record(second int) error {
+	//TODO: need to implement
+	return nil
 }
 
-func (pirtc *PiRTC) enableDevice() error {
-	if pirtc.device == nil {
+func (pirtc *PiRTC) enableStream() error {
+	if pirtc.stream == nil {
+		pirtc.mu.Lock()
 		VP8Params, err := vpx.NewVP8Params()
 		if err != nil {
 			return err
@@ -129,7 +151,7 @@ func (pirtc *PiRTC) enableDevice() error {
 		codecSelector := mediadevices.NewCodecSelector(mediadevices.WithVideoEncoders(&VP8Params))
 		codecSelector.Populate(&pirtc.mediaEngine)
 
-		pirtc.device, err = mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
+		pirtc.stream, err = mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
 			Video: func(constraint *mediadevices.MediaTrackConstraints) {
 				constraint.FrameFormat = prop.FrameFormat(frame.FormatI420)
 				constraint.Width = prop.Int(1280)
@@ -141,7 +163,47 @@ func (pirtc *PiRTC) enableDevice() error {
 			return err
 		}
 		pirtc.isCameraUsed = true
-
+		pirtc.mu.Unlock()
 	}
+	return nil
+}
+
+func (pirtc *PiRTC) disableStream() error {
+	if pirtc.isCameraUsed && pirtc.stream != nil {
+		pirtc.mu.Lock()
+		tracks := pirtc.stream.GetTracks()
+		if len(tracks) > 0 {
+			for _, track := range tracks {
+				if err := track.Close(); err != nil {
+					return err
+				}
+			}
+		}
+		pirtc.stream = nil
+		pirtc.isCameraUsed = false
+		pirtc.mu.Unlock()
+	}
+	return nil
+}
+
+func (pirtc *PiRTC) TakeShoot(name string) error {
+	if pirtc.isCameraUsed == false {
+		if err := pirtc.enableStream(); err != nil {
+			return err
+		}
+	}
+	defer pirtc.disableStream()
+
+	track := pirtc.stream.GetVideoTracks()[0]
+	videoTrack := track.(*mediadevices.VideoTrack)
+	defer videoTrack.Close()
+
+	videoReader := videoTrack.NewReader(false)
+	frame, release, _ := videoReader.Read()
+	defer release()
+
+	nameImg := name + ".jpg"
+	output, _ := os.Create(nameImg)
+	jpeg.Encode(output, frame, nil)
 	return nil
 }
