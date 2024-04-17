@@ -3,10 +3,9 @@ package pirtc
 import (
 	"errors"
 	"fmt"
-	"image"
 	"image/jpeg"
-	"io"
 	"log"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/pion/mediadevices/pkg/codec/vpx"
 	_ "github.com/pion/mediadevices/pkg/driver/camera"
 	"github.com/pion/mediadevices/pkg/frame"
-	"github.com/pion/mediadevices/pkg/io/video"
 	"github.com/pion/mediadevices/pkg/prop"
 )
 
@@ -197,9 +195,9 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	* Take a shot and save with the name given
 	* @param name the name of the file will saved
 	 */
-	if pirtc.isCameraUsed == false {
+	if !pirtc.isCameraUsed {
 		if err := pirtc.enableStream(); err != nil {
-			return err
+			panic(err)
 		}
 	}
 
@@ -211,8 +209,14 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	defer release()
 
 	nameImg := name + ".jpg"
-	output, _ := os.Create(nameImg)
-	jpeg.Encode(output, frame, nil)
+	output, err := os.Create(nameImg)
+	if err != nil {
+		panic(err)
+	}
+	err = jpeg.Encode(output, frame, nil)
+	if err != nil {
+		panic(err)
+	}
 
 	if len(pirtc.Connections) != 0 {
 		pirtc.disableStream()
@@ -226,45 +230,16 @@ func (pirtc *PiRTC) Record(second int) error {
 	if !pirtc.isCameraUsed {
 		pirtc.enableStream()
 	}
-
-	dest := getCurrentTimeStr() + ".webm"
+	saver := newWebmSaver()
+	// dest := getCurrentTimeStr() + ".webM"
 	videoTrack := pirtc.stream.GetVideoTracks()[0].(*mediadevices.VideoTrack)
-	timer := time.NewTimer(time.Duration(second) * time.Second)
-	videoTrack.Transform(video.TransformFunc(func(r video.Reader) video.Reader {
-		return video.ReaderFunc(func() (img image.Image, release func(), err error) {
-			// we send io.EOF signal to the encoder reader to stop reading. Therefore, io.Copy
-			// will finish its execution and the program will finish
 
-			select {
-			case <-timer.C:
-				timer.Stop()
-				log.Println("Video saved")
-				return nil, func() {}, io.EOF
-			default:
-			}
-
-			return r.Read()
-		})
-	}))
-
-	log.Println(pirtc.params.RTPCodec().MimeType)
-	reader, err := videoTrack.NewEncodedIOReader(pirtc.params.RTPCodec().MimeType)
+	reader, err := videoTrack.NewRTPReader(pirtc.params.RTPCodec().MimeType, rand.Uint32(), 1000)
 	if err != nil {
 		return err
 	}
 	defer reader.Close()
-
-	out, err := os.Create(dest)
-	if err != nil {
-		log.Println("out: %v", out)
-		return err
-	}
-
-	log.Println("out: %v", out)
-	_, err = io.Copy(out, reader)
-	if err != nil {
-		return err
-	}
+	rtpPacket, release, error := reader.Read()
 
 	return nil
 }

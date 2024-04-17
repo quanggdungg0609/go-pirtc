@@ -36,6 +36,7 @@ require (
 )
 
 require (
+	github.com/at-wat/ebml-go v0.17.1
 	github.com/joho/godotenv v1.5.1
 	github.com/pion/mediadevices v0.6.1
 	github.com/pion/webrtc/v3 v3.2.32

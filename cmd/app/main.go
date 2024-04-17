@@ -31,17 +31,16 @@ func main() {
 		panic(err)
 	}
 	// take a shot
-
-	// if err := prtc.TakeShot(env.Uuid); err != nil {
-	// 	panic(err)
-	// }
-
 	go func() {
 		err := prtc.Record(10)
 		if err != nil {
 			panic(err)
 		}
 	}()
+
+	// if err := prtc.TakeShot(env.Uuid); err != nil {
+	// 	panic(err)
+	// }
 
 	// connect to websocket
 	wsClient, err := ws.Connect(env.WsUri, nil)
