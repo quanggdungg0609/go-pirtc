@@ -2,10 +2,14 @@ package pirtc
 
 import (
 	"errors"
+	"fmt"
+	"image"
 	"image/jpeg"
+	"io"
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/pion/mediadevices"
 	"github.com/pion/webrtc/v3"
@@ -13,6 +17,7 @@ import (
 	"github.com/pion/mediadevices/pkg/codec/vpx"
 	_ "github.com/pion/mediadevices/pkg/driver/camera"
 	"github.com/pion/mediadevices/pkg/frame"
+	"github.com/pion/mediadevices/pkg/io/video"
 	"github.com/pion/mediadevices/pkg/prop"
 )
 
@@ -28,18 +33,26 @@ type PiRTC struct {
 	isCameraUsed bool
 	stream       mediadevices.MediaStream
 	mediaEngine  webrtc.MediaEngine
+	params       vpx.VP8Params
 	Connections  map[string]*webrtc.PeerConnection
 	mu           sync.Mutex
 }
 
-func Init() *PiRTC {
+func Init() (*PiRTC, error) {
+	VP8Params, err := vpx.NewVP8Params()
+	if err != nil {
+		return nil, err
+	}
+	VP8Params.BitRate = 500_000 // 5Kbps
+
 	pirtc := PiRTC{
 		isCameraUsed: false,
 		stream:       nil,
+		params:       VP8Params,
 		mediaEngine:  webrtc.MediaEngine{},
 		Connections:  make(map[string]*webrtc.PeerConnection),
 	}
-	return &pirtc
+	return &pirtc, nil
 }
 
 func (pirtc *PiRTC) NewUser(uuid string) error {
@@ -135,20 +148,12 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	return peer.LocalDescription(), nil
 }
 
-func (pirtc *PiRTC) record(second int) error {
-	//TODO: need to implement
-	return nil
-}
-
 func (pirtc *PiRTC) enableStream() error {
 	if pirtc.stream == nil {
+		var err error
 		pirtc.mu.Lock()
-		VP8Params, err := vpx.NewVP8Params()
-		if err != nil {
-			return err
-		}
-		VP8Params.BitRate = 500_000 // 5Kbps
-		codecSelector := mediadevices.NewCodecSelector(mediadevices.WithVideoEncoders(&VP8Params))
+
+		codecSelector := mediadevices.NewCodecSelector(mediadevices.WithVideoEncoders(&pirtc.params))
 		codecSelector.Populate(&pirtc.mediaEngine)
 
 		pirtc.stream, err = mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
@@ -162,6 +167,7 @@ func (pirtc *PiRTC) enableStream() error {
 		if err != nil {
 			return err
 		}
+
 		pirtc.isCameraUsed = true
 		pirtc.mu.Unlock()
 	}
@@ -186,17 +192,19 @@ func (pirtc *PiRTC) disableStream() error {
 	return nil
 }
 
-func (pirtc *PiRTC) TakeShoot(name string) error {
+func (pirtc *PiRTC) TakeShot(name string) error {
+	/*
+	* Take a shot and save with the name given
+	* @param name the name of the file will saved
+	 */
 	if pirtc.isCameraUsed == false {
 		if err := pirtc.enableStream(); err != nil {
 			return err
 		}
 	}
-	defer pirtc.disableStream()
 
 	track := pirtc.stream.GetVideoTracks()[0]
 	videoTrack := track.(*mediadevices.VideoTrack)
-	defer videoTrack.Close()
 
 	videoReader := videoTrack.NewReader(false)
 	frame, release, _ := videoReader.Read()
@@ -205,5 +213,73 @@ func (pirtc *PiRTC) TakeShoot(name string) error {
 	nameImg := name + ".jpg"
 	output, _ := os.Create(nameImg)
 	jpeg.Encode(output, frame, nil)
+
+	if len(pirtc.Connections) != 0 {
+		pirtc.disableStream()
+	}
+
 	return nil
+}
+
+func (pirtc *PiRTC) Record(second int) error {
+	//TODO: need to implement
+	if !pirtc.isCameraUsed {
+		pirtc.enableStream()
+	}
+
+	dest := getCurrentTimeStr() + ".webm"
+	videoTrack := pirtc.stream.GetVideoTracks()[0].(*mediadevices.VideoTrack)
+	timer := time.NewTimer(time.Duration(second) * time.Second)
+	videoTrack.Transform(video.TransformFunc(func(r video.Reader) video.Reader {
+		return video.ReaderFunc(func() (img image.Image, release func(), err error) {
+			// we send io.EOF signal to the encoder reader to stop reading. Therefore, io.Copy
+			// will finish its execution and the program will finish
+
+			select {
+			case <-timer.C:
+				timer.Stop()
+				log.Println("Video saved")
+				return nil, func() {}, io.EOF
+			default:
+			}
+
+			return r.Read()
+		})
+	}))
+
+	log.Println(pirtc.params.RTPCodec().MimeType)
+	reader, err := videoTrack.NewEncodedIOReader(pirtc.params.RTPCodec().MimeType)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	out, err := os.Create(dest)
+	if err != nil {
+		log.Println("out: %v", out)
+		return err
+	}
+
+	log.Println("out: %v", out)
+	_, err = io.Copy(out, reader)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func getCurrentTimeStr() string {
+	currentTime := time.Now()
+
+	hour := currentTime.Hour()
+	minute := currentTime.Minute()
+	second := currentTime.Second()
+	day := currentTime.Day()
+	month := currentTime.Month()
+	year := currentTime.Year()
+
+	timeString := fmt.Sprintf("%02d%02d%02d_%02d%02d%d", hour, minute, second, day, month, year)
+
+	return timeString
 }

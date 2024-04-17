@@ -26,12 +26,23 @@ func main() {
 
 	log.Println(env.Uuid)
 
-	prtc := pirtc.Init()
-	// take a shot
-
-	if err := prtc.TakeShoot(env.Uuid); err != nil {
+	prtc, err := pirtc.Init()
+	if err != nil {
 		panic(err)
 	}
+	// take a shot
+
+	// if err := prtc.TakeShot(env.Uuid); err != nil {
+	// 	panic(err)
+	// }
+
+	go func() {
+		err := prtc.Record(10)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
 	// connect to websocket
 	wsClient, err := ws.Connect(env.WsUri, nil)
 	if err != nil {
