@@ -231,21 +231,26 @@ func (pirtc *PiRTC) Record(second int) error {
 	if err != nil {
 		return err
 	}
+	log.Println("Recording video...")
 	timer := time.NewTimer(time.Duration(second) * time.Second)
 
 	defer reader.Close()
+
 	for {
-		rtpPacket, release, _ := reader.Read()
 		select {
 		case <-timer.C:
-			defer release()
+			log.Println("Video Recorded")
 			return nil
 		default:
+			rtpPacket, release, _ := reader.Read()
+			defer release()
 			for _, pkt := range rtpPacket {
+
 				saver.PushVP8(dest, pkt)
 			}
 		}
 	}
+
 }
 
 func getCurrentTimeStr() string {
