@@ -1,7 +1,9 @@
 package pirtc
 
 import (
+	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/at-wat/ebml-go/webm"
@@ -61,6 +63,15 @@ func (s *webmSaver) PushVP8(path string, rtpPacket *rtp.Packet) {
 }
 
 func (s *webmSaver) InitWriter(path string, width, height int) {
+	dir := filepath.Dir(path)
+
+	// Create directory if not exist
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		log.Printf("Error while creating directory: %v\n", err)
+
+	}
+
+	// create file
 	w, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		panic(err)

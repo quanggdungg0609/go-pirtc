@@ -28,11 +28,12 @@ var defaultConfig = webrtc.Configuration{
 }
 
 type PiRTC struct {
-	stream      mediadevices.MediaStream
-	mediaEngine webrtc.MediaEngine
-	params      vpx.VP8Params
-	Connections map[string]*webrtc.PeerConnection
-	mu          sync.Mutex
+	usageStreamCount int
+	stream           mediadevices.MediaStream
+	mediaEngine      webrtc.MediaEngine
+	params           vpx.VP8Params
+	Connections      map[string]*webrtc.PeerConnection
+	mu               sync.Mutex
 }
 
 func Init() (*PiRTC, error) {
@@ -43,10 +44,11 @@ func Init() (*PiRTC, error) {
 	VP8Params.BitRate = 500_000 // 5Kbps
 
 	pirtc := PiRTC{
-		stream:      nil,
-		params:      VP8Params,
-		mediaEngine: webrtc.MediaEngine{},
-		Connections: make(map[string]*webrtc.PeerConnection),
+		usageStreamCount: 0,
+		stream:           nil,
+		params:           VP8Params,
+		mediaEngine:      webrtc.MediaEngine{},
+		Connections:      make(map[string]*webrtc.PeerConnection),
 	}
 	return &pirtc, nil
 }
@@ -80,12 +82,14 @@ func (pirtc *PiRTC) UserDisconnect(uuid string) error {
 }
 
 func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
-	if pirtc.stream == nil {
-		err := pirtc.enableStream()
-		if err != nil {
-			return nil, err
-		}
+	err := pirtc.enableStream()
+	if err != nil {
+		return nil, err
 	}
+
+	pirtc.incrementStreamUsage()
+	defer pirtc.decrementStreamUsage()
+
 	pirtc.mu.Lock()
 	peer, ok := pirtc.Connections[uuid]
 	if !ok {
@@ -95,9 +99,9 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 		return nil, errors.New("PEER CONNECTION")
 	}
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&pirtc.mediaEngine))
-	peer, err := api.NewPeerConnection(defaultConfig)
+	peer, err = api.NewPeerConnection(defaultConfig)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	for _, track := range pirtc.stream.GetTracks() {
@@ -145,6 +149,9 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 }
 
 func (pirtc *PiRTC) enableStream() error {
+	/*
+	* Enable stream if not exist
+	 */
 	pirtc.mu.Lock()
 	defer pirtc.mu.Unlock()
 	if pirtc.stream == nil {
@@ -164,9 +171,8 @@ func (pirtc *PiRTC) enableStream() error {
 		if err != nil {
 			return err
 		}
-
+		log.Println("Camera Enabled")
 	}
-	log.Println("Camera Enabled")
 	return nil
 }
 
@@ -183,6 +189,7 @@ func (pirtc *PiRTC) disableStream() error {
 		}
 		pirtc.stream = nil
 		pirtc.mu.Unlock()
+		log.Println("Camera disable")
 	}
 	return nil
 }
@@ -195,12 +202,14 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	if err := pirtc.enableStream(); err != nil {
 		panic(err)
 	}
+	pirtc.incrementStreamUsage()
+	defer pirtc.decrementStreamUsage()
 
 	track := pirtc.stream.GetVideoTracks()[0]
 	videoTrack := track.(*mediadevices.VideoTrack)
 
 	videoReader := videoTrack.NewReader(false)
-	time.AfterFunc(time.Duration(1)*time.Second, func() {
+	time.AfterFunc(time.Duration(500)*time.Millisecond, func() {
 		frame, release, _ := videoReader.Read()
 		defer release()
 
@@ -214,17 +223,23 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 			panic(err)
 		}
 	})
+	log.Println("Captured Image")
 
 	return nil
 }
 
-func (pirtc *PiRTC) Record(second int) error {
-	//TODO: need to implement
+func (pirtc *PiRTC) Record(savePath string, second int) error {
+	/*
+	* Record video to @params savePath in @params second seconds
+	 */
+
+	// enableStream if necessary
 	pirtc.enableStream()
 
+	pirtc.incrementStreamUsage()
+
 	saver := newWebmSaver()
-	dest := getCurrentTimeStr() + ".webM"
-	log.Println(pirtc.stream)
+	dest := savePath + "/" + getCurrentTimeStr() + ".webM"
 	videoTrack := pirtc.stream.GetVideoTracks()[0].(*mediadevices.VideoTrack)
 
 	reader, err := videoTrack.NewRTPReader(pirtc.params.RTPCodec().MimeType, rand.Uint32(), 1000)
@@ -236,6 +251,7 @@ func (pirtc *PiRTC) Record(second int) error {
 
 	defer reader.Close()
 
+	defer pirtc.decrementStreamUsage()
 	for {
 		select {
 		case <-timer.C:
@@ -249,6 +265,26 @@ func (pirtc *PiRTC) Record(second int) error {
 				saver.PushVP8(dest, pkt)
 			}
 		}
+	}
+}
+
+func (pirtc *PiRTC) incrementStreamUsage() {
+	pirtc.mu.Lock()
+	pirtc.usageStreamCount++
+	log.Println("Stream usage count: ", pirtc.usageStreamCount)
+	pirtc.mu.Unlock()
+}
+
+func (pirtc *PiRTC) decrementStreamUsage() {
+	pirtc.mu.Lock()
+	defer pirtc.mu.Unlock()
+
+	pirtc.usageStreamCount--
+	log.Println("Stream usage count: ", pirtc.usageStreamCount)
+
+	if pirtc.usageStreamCount == 0 {
+		pirtc.disableStream()
+
 	}
 
 }

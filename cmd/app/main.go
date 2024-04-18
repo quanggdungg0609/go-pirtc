@@ -32,7 +32,7 @@ func main() {
 	}
 	// take a shot
 	go func() {
-		err := prtc.Record(15)
+		err := prtc.Record(env.VideoPath, 15)
 		if err != nil {
 			panic(err)
 		}
