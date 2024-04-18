@@ -209,7 +209,7 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	videoTrack := track.(*mediadevices.VideoTrack)
 
 	videoReader := videoTrack.NewReader(false)
-	time.AfterFunc(time.Duration(500)*time.Millisecond, func() {
+	time.AfterFunc(time.Duration(1)*time.Second, func() {
 		frame, release, _ := videoReader.Read()
 		defer release()
 
@@ -228,15 +228,12 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	return nil
 }
 
-func (pirtc *PiRTC) Record(savePath string, second int) error {
-	/*
-	* Record video to @params savePath in @params second seconds
-	 */
-
+func (pirtc *PiRTC) Record(savePath string, stopCh chan struct{}) error {
 	// enableStream if necessary
 	pirtc.enableStream()
-
+	log.Println(pirtc.stream)
 	pirtc.incrementStreamUsage()
+	defer pirtc.decrementStreamUsage()
 
 	saver := newWebmSaver()
 	dest := savePath + "/" + getCurrentTimeStr() + ".webM"
@@ -247,7 +244,47 @@ func (pirtc *PiRTC) Record(savePath string, second int) error {
 		return err
 	}
 	log.Println("Recording video...")
-	timer := time.NewTimer(time.Duration(second) * time.Second)
+
+	defer reader.Close()
+
+	defer pirtc.decrementStreamUsage()
+	for {
+		select {
+		case <-stopCh:
+			log.Println("Video Recorded")
+			return nil
+		default:
+			rtpPacket, release, _ := reader.Read()
+			defer release()
+			for _, pkt := range rtpPacket {
+
+				saver.PushVP8(dest, pkt)
+			}
+		}
+	}
+}
+
+func (pirtc *PiRTC) RecordWithTimer(savePath string, duration time.Duration) error {
+	/*
+	* Record video to @params savePath in @params second seconds
+	 */
+
+	// enableStream if necessary
+	pirtc.enableStream()
+	log.Println(pirtc.stream)
+	pirtc.incrementStreamUsage()
+	defer pirtc.decrementStreamUsage()
+
+	saver := newWebmSaver()
+	dest := savePath + "/" + getCurrentTimeStr() + ".webM"
+	videoTrack := pirtc.stream.GetVideoTracks()[0].(*mediadevices.VideoTrack)
+
+	reader, err := videoTrack.NewRTPReader(pirtc.params.RTPCodec().MimeType, rand.Uint32(), 1000)
+	if err != nil {
+		return err
+	}
+	log.Println("Recording video...")
+	timer := time.NewTimer(duration)
 
 	defer reader.Close()
 

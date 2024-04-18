@@ -8,6 +8,7 @@ import (
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
+	"gitlab.lanestel.net/quangdung/go-pirtc/internal/utils"
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
 )
 
@@ -24,22 +25,30 @@ func main() {
 		panic(err)
 	}
 
-	log.Println(env.Uuid)
+	// log.Println(env.Uuid)
 
 	prtc, err := pirtc.Init()
 	if err != nil {
 		panic(err)
 	}
-	// take a shot
-	go func() {
-		err := prtc.Record(env.VideoPath, 15)
-		if err != nil {
-			panic(err)
-		}
-	}()
 
+	// go func() {
+	// 	err := prtc.RecordWithTimer(env.VideoPath, time.Duration(10)*time.Second)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }()
+
+	// take a shot
 	// time.AfterFunc(time.Duration(5)*time.Second, func() {
-	if err := prtc.TakeShot(env.Uuid); err != nil {
+	// if err := prtc.TakeShot(env.Uuid); err != nil {
+	// 	panic(err)
+	// }
+	log.Println("apiUri: ", env.ApiUri+"cameras/upload-image")
+	log.Println("pathFile: ", env.Uuid+".jpeg")
+
+	err = utils.UploadImage(env.ApiUri+"cameras/upload-image", env.Uuid+".jpeg")
+	if err != nil {
 		panic(err)
 	}
 	// })

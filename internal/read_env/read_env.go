@@ -9,7 +9,7 @@ import (
 
 type Env struct {
 	// ApiKey   string
-	// ApiUri   string
+	ApiUri    string
 	WsUri     string
 	Uuid      string
 	MacAdr    string
@@ -35,7 +35,7 @@ func ReadEnv() (*Env, error) {
 
 	nameDevice := os.Getenv("NAME")
 	locationDevice := os.Getenv("LOCATION")
-	// apiUri := os.Getenv("API_URI")
+	apiUri := os.Getenv("API_URI")
 	wsUri := os.Getenv("WS_URI")
 	videoPath := os.Getenv("VIDEO_PATH")
 	// check if api key exist in .env file
@@ -62,11 +62,11 @@ func ReadEnv() (*Env, error) {
 	// }
 
 	env := Env{
-		Uuid:     uuidDevice,
-		Name:     nameDevice,
-		Location: locationDevice,
-		MacAdr:   macAdrDevice,
-		// ApiUri:   apiUri,
+		Uuid:      uuidDevice,
+		Name:      nameDevice,
+		Location:  locationDevice,
+		MacAdr:    macAdrDevice,
+		ApiUri:    apiUri,
 		WsUri:     wsUri,
 		VideoPath: videoPath,
 		// ApiKey:   apiKey,
@@ -81,7 +81,7 @@ func ReadEnv() (*Env, error) {
 func (env Env) toMap() map[string]string {
 	envMap := make(map[string]string)
 	// envMap["API_KEY"] = env.ApiKey
-	// envMap["API_URI"] = env.ApiUri
+	envMap["API_URI"] = env.ApiUri
 	envMap["WS_URI"] = env.WsUri
 	envMap["UUID"] = env.Uuid
 	envMap["MAC_ADR"] = env.MacAdr
