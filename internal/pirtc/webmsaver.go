@@ -1,6 +1,7 @@
 package pirtc
 
 import (
+	"math/rand"
 	"os"
 	"time"
 
@@ -71,7 +72,7 @@ func (s *webmSaver) InitWriter(path string, width, height int) {
 			{
 				Name:            "Video",
 				TrackNumber:     1,
-				TrackUID:        67890,
+				TrackUID:        rand.Uint64(),
 				CodecID:         "V_VP8",
 				TrackType:       1,
 				DefaultDuration: 33333333,

@@ -28,12 +28,11 @@ var defaultConfig = webrtc.Configuration{
 }
 
 type PiRTC struct {
-	isCameraUsed bool
-	stream       mediadevices.MediaStream
-	mediaEngine  webrtc.MediaEngine
-	params       vpx.VP8Params
-	Connections  map[string]*webrtc.PeerConnection
-	mu           sync.Mutex
+	stream      mediadevices.MediaStream
+	mediaEngine webrtc.MediaEngine
+	params      vpx.VP8Params
+	Connections map[string]*webrtc.PeerConnection
+	mu          sync.Mutex
 }
 
 func Init() (*PiRTC, error) {
@@ -41,14 +40,13 @@ func Init() (*PiRTC, error) {
 	if err != nil {
 		return nil, err
 	}
-	VP8Params.BitRate = 1_000_000 // 5Kbps
+	VP8Params.BitRate = 500_000 // 5Kbps
 
 	pirtc := PiRTC{
-		isCameraUsed: false,
-		stream:       nil,
-		params:       VP8Params,
-		mediaEngine:  webrtc.MediaEngine{},
-		Connections:  make(map[string]*webrtc.PeerConnection),
+		stream:      nil,
+		params:      VP8Params,
+		mediaEngine: webrtc.MediaEngine{},
+		Connections: make(map[string]*webrtc.PeerConnection),
 	}
 	return &pirtc, nil
 }
@@ -147,9 +145,10 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 }
 
 func (pirtc *PiRTC) enableStream() error {
+	pirtc.mu.Lock()
+	defer pirtc.mu.Unlock()
 	if pirtc.stream == nil {
 		var err error
-		pirtc.mu.Lock()
 
 		codecSelector := mediadevices.NewCodecSelector(mediadevices.WithVideoEncoders(&pirtc.params))
 		codecSelector.Populate(&pirtc.mediaEngine)
@@ -166,15 +165,13 @@ func (pirtc *PiRTC) enableStream() error {
 			return err
 		}
 
-		pirtc.isCameraUsed = true
-		pirtc.mu.Unlock()
 	}
 	log.Println("Camera Enabled")
 	return nil
 }
 
 func (pirtc *PiRTC) disableStream() error {
-	if pirtc.isCameraUsed && pirtc.stream != nil {
+	if pirtc.stream != nil {
 		pirtc.mu.Lock()
 		tracks := pirtc.stream.GetTracks()
 		if len(tracks) > 0 {
@@ -185,7 +182,6 @@ func (pirtc *PiRTC) disableStream() error {
 			}
 		}
 		pirtc.stream = nil
-		pirtc.isCameraUsed = false
 		pirtc.mu.Unlock()
 	}
 	return nil
@@ -196,37 +192,36 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	* Take a shot and save with the name given
 	* @param name the name of the file will saved
 	 */
-	if pirtc.stream == nil {
-		if err := pirtc.enableStream(); err != nil {
-			panic(err)
-		}
+	if err := pirtc.enableStream(); err != nil {
+		panic(err)
 	}
 
 	track := pirtc.stream.GetVideoTracks()[0]
 	videoTrack := track.(*mediadevices.VideoTrack)
 
 	videoReader := videoTrack.NewReader(false)
-	frame, release, _ := videoReader.Read()
-	defer release()
+	time.AfterFunc(time.Duration(1)*time.Second, func() {
+		frame, release, _ := videoReader.Read()
+		defer release()
 
-	nameImg := name + ".jpg"
-	output, err := os.Create(nameImg)
-	if err != nil {
-		panic(err)
-	}
-	err = jpeg.Encode(output, frame, nil)
-	if err != nil {
-		panic(err)
-	}
+		nameImg := name + ".jpeg"
+		output, err := os.Create(nameImg)
+		if err != nil {
+			panic(err)
+		}
+		err = jpeg.Encode(output, frame, nil)
+		if err != nil {
+			panic(err)
+		}
+	})
 
 	return nil
 }
 
 func (pirtc *PiRTC) Record(second int) error {
 	//TODO: need to implement
-	if pirtc.stream == nil {
-		pirtc.enableStream()
-	}
+	pirtc.enableStream()
+
 	saver := newWebmSaver()
 	dest := getCurrentTimeStr() + ".webM"
 	log.Println(pirtc.stream)
@@ -237,6 +232,7 @@ func (pirtc *PiRTC) Record(second int) error {
 		return err
 	}
 	timer := time.NewTimer(time.Duration(second) * time.Second)
+
 	defer reader.Close()
 	for {
 		rtpPacket, release, _ := reader.Read()

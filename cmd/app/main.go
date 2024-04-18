@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"time"
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
@@ -33,17 +32,17 @@ func main() {
 	}
 	// take a shot
 	go func() {
-		err := prtc.Record(10)
+		err := prtc.Record(15)
 		if err != nil {
 			panic(err)
 		}
 	}()
 
-	time.AfterFunc(time.Duration(5)*time.Second, func() {
-		if err := prtc.TakeShot(env.Uuid); err != nil {
-			panic(err)
-		}
-	})
+	// time.AfterFunc(time.Duration(5)*time.Second, func() {
+	if err := prtc.TakeShot(env.Uuid); err != nil {
+		panic(err)
+	}
+	// })
 
 	// connect to websocket
 	wsClient, err := ws.Connect(env.WsUri, nil)
