@@ -56,7 +56,7 @@ func UploadImage(uri string, path string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("unexpected response: %s", resp.Status)
 	}
 	log.Println("Image Uploaded")

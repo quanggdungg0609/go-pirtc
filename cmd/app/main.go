@@ -8,7 +8,6 @@ import (
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
-	"gitlab.lanestel.net/quangdung/go-pirtc/internal/utils"
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
 )
 
@@ -32,6 +31,7 @@ func main() {
 		panic(err)
 	}
 
+	// test functionaly of camera(record, take shot and upload img to server)
 	// go func() {
 	// 	err := prtc.RecordWithTimer(env.VideoPath, time.Duration(10)*time.Second)
 	// 	if err != nil {
@@ -39,18 +39,18 @@ func main() {
 	// 	}
 	// }()
 
-	// take a shot
+	// // take a shot
 	// time.AfterFunc(time.Duration(5)*time.Second, func() {
-	// if err := prtc.TakeShot(env.Uuid); err != nil {
-	// 	panic(err)
-	// }
-	log.Println("apiUri: ", env.ApiUri+"cameras/upload-image")
-	log.Println("pathFile: ", env.Uuid+".jpeg")
+	// 	if err := prtc.TakeShot(env.Uuid); err != nil {
+	// 		panic(err)
+	// 	}
+	// 	log.Println("apiUri: ", env.ApiUri+"cameras/upload-thumbnail")
+	// 	log.Println("pathFile: ", env.Uuid+".jpeg")
 
-	err = utils.UploadImage(env.ApiUri+"cameras/upload-image", env.Uuid+".jpeg")
-	if err != nil {
-		panic(err)
-	}
+	// 	err = utils.UploadImage(env.ApiUri+"cameras/upload-image", env.Uuid+".jpeg")
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
 	// })
 
 	// connect to websocket
