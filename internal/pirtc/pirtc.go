@@ -88,16 +88,13 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	}
 
 	pirtc.incrementStreamUsage()
-	defer pirtc.decrementStreamUsage()
 
 	pirtc.mu.Lock()
 	peer, ok := pirtc.Connections[uuid]
 	if !ok {
 		return nil, errors.New("USER NOT EXISTS")
 	}
-	if peer != nil {
-		return nil, errors.New("PEER CONNECTION")
-	}
+
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(&pirtc.mediaEngine))
 	peer, err = api.NewPeerConnection(defaultConfig)
 	if err != nil {
@@ -120,8 +117,10 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	}
 
 	peer.OnICEConnectionStateChange(func(is webrtc.ICEConnectionState) {
-		if is == webrtc.ICEConnectionStateClosed {
+		log.Println(is)
+		if is == webrtc.ICEConnectionStateDisconnected {
 			log.Printf("[Peer - %s]: peer closed\n", uuid)
+			peer.Close()
 			// TODO: need to do something to remove the closed peer from the list
 		}
 	})
@@ -324,6 +323,25 @@ func (pirtc *PiRTC) decrementStreamUsage() {
 
 	}
 
+}
+
+func CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription {
+	sd := webrtc.SessionDescription{}
+	switch typeSd {
+	case "offer":
+		sd.Type = webrtc.SDPTypeOffer
+	case "answer":
+		sd.Type = webrtc.SDPTypeAnswer
+
+	case "rollback":
+		sd.Type = webrtc.SDPTypeRollback
+
+	case "pranswer":
+		sd.Type = webrtc.SDPTypePranswer
+	}
+
+	sd.SDP = sdp
+	return sd
 }
 
 func getCurrentTimeStr() string {

@@ -92,7 +92,7 @@ func (ws *WS) ListenAndServe(callbacks map[string]func(interface{}), disconnect 
 			}
 
 			if callback, ok := callbacks[message.Event]; ok {
-				log.Printf("Received event [%s]: %v\n", message.Event, message.Data)
+				log.Printf("Received event [%s]\n", message.Event)
 				callback(message.Data)
 			} else {
 				log.Printf("Received event [%s]: %s\n", message.Event, message.Data)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -11,6 +12,14 @@ import (
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
 )
 
+type ContextKey string
+
+const (
+	PrtcKey ContextKey = "prtc"
+	WsKey   ContextKey = "wsClient"
+	EnvKey  ContextKey = "env"
+)
+
 func main() {
 	// create channels
 	var quitChan = make(chan os.Signal, 1)
@@ -18,11 +27,15 @@ func main() {
 
 	var disconnectChan = make(chan struct{})
 
+	ctx := context.Background()
+
 	// read file .env
 	env, err := readenv.ReadEnv()
 	if err != nil {
 		panic(err)
 	}
+
+	ctx = context.WithValue(ctx, EnvKey, env)
 
 	// log.Println(env.Uuid)
 
@@ -31,6 +44,7 @@ func main() {
 		panic(err)
 	}
 
+	ctx = context.WithValue(ctx, PrtcKey, prtc)
 	// test functionaly of camera(record, take shot and upload img to server)
 	// go func() {
 	// 	err := prtc.RecordWithTimer(env.VideoPath, time.Duration(10)*time.Second)
@@ -59,8 +73,10 @@ func main() {
 		panic(err)
 	}
 
+	ctx = context.WithValue(ctx, WsKey, wsClient)
+
 	//create callbacks for each event
-	callbacks := createCallBacks(prtc)
+	callbacks := createCallBacks(ctx)
 
 	// register with server
 	payload := map[string]string{
@@ -69,7 +85,7 @@ func main() {
 		"location": env.Location,
 	}
 	wsClient.EmitMessage("camera-connect", payload)
-
+	wsClient.EmitMessage("request-list-users", payload)
 	go wsClient.ListenAndServe(callbacks, disconnectChan)
 
 	for {
@@ -83,7 +99,11 @@ func main() {
 	}
 }
 
-func createCallBacks(prtc *pirtc.PiRTC) map[string]func(interface{}) {
+func createCallBacks(ctx context.Context) map[string]func(interface{}) {
+	env := ctx.Value(EnvKey).(*readenv.Env)
+	prtc := ctx.Value(PrtcKey).(*pirtc.PiRTC)
+	wsClient := ctx.Value(WsKey).(*ws.WS)
+
 	callbacks := make(map[string]func(interface{}))
 
 	callbacks["user-connect"] = func(data interface{}) {
@@ -106,12 +126,39 @@ func createCallBacks(prtc *pirtc.PiRTC) map[string]func(interface{}) {
 
 	}
 
-	callbacks["request-list-users"] = func(data interface{}) {
+	callbacks["response-list-users"] = func(data interface{}) {
+		listUsers := data.([]interface{})
+		for _, raw := range listUsers {
+			user := raw.(map[string]interface{})
+			prtc.NewUser(user["uuid"].(string))
 
+		}
 	}
 
 	callbacks["offer-sd"] = func(data interface{}) {
+		if prtc != nil {
+			payload := data.(map[string]interface{})
+			offerSd := pirtc.CreateSessionDescription(payload["type"].(string), payload["sdp"].(string))
+			answerSd, err := prtc.Answer(payload["from"].(string), offerSd)
+			if err != nil {
+				panic(err)
+			}
+			log.Println(env.Uuid)
 
+			data := map[string]string{
+				"uuid": env.Uuid,
+				"to":   payload["from"].(string),
+				"type": answerSd.Type.String(),
+				"sdp":  answerSd.SDP,
+			}
+			if wsClient != nil {
+				err = wsClient.EmitMessage("answer-sd", data)
+				if err != nil {
+					log.Println(err)
+				}
+			}
+
+		}
 	}
 
 	callbacks["ice-candidate"] = func(data interface{}) {}
