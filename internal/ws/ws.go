@@ -60,6 +60,7 @@ func (ws *WS) EmitMessage(event string, payload interface{}) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 
+	log.Printf("Emit message event [%v]", event)
 	err = ws.ws.WriteMessage(websocket.TextMessage, bMessage)
 	if err != nil {
 		return err

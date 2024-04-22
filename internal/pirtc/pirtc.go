@@ -107,6 +107,7 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 				log.Printf("Track error: %v\n", err)
 			}
 			log.Printf("Track (ID: %s) ended \n", track.ID())
+			pirtc.decrementStreamUsage()
 		})
 		_, err = peer.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
 			Direction: webrtc.RTPTransceiverDirectionSendonly,
@@ -122,6 +123,12 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 			log.Printf("[Peer - %s]: peer closed\n", uuid)
 			peer.Close()
 			// TODO: need to do something to remove the closed peer from the list
+		} else if is == webrtc.ICEConnectionStateFailed {
+			log.Printf("[Peer - %s]: peer failed\n", uuid)
+			peer.Close()
+		} else if is == webrtc.ICEConnectionStateClosed {
+			pirtc.decrementStreamUsage()
+
 		}
 	})
 
@@ -320,7 +327,6 @@ func (pirtc *PiRTC) decrementStreamUsage() {
 
 	if pirtc.usageStreamCount == 0 {
 		pirtc.disableStream()
-
 	}
 
 }
