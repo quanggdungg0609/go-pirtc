@@ -82,14 +82,16 @@ func (pirtc *PiRTC) UserDisconnect(uuid string) error {
 }
 
 func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
+
+	pirtc.incrementStreamUsage()
+
 	err := pirtc.enableStream()
 	if err != nil {
 		return nil, err
 	}
-
-	pirtc.incrementStreamUsage()
-
 	pirtc.mu.Lock()
+	defer pirtc.mu.Unlock()
+
 	peer, ok := pirtc.Connections[uuid]
 	if !ok {
 		return nil, errors.New("USER NOT EXISTS")
@@ -118,15 +120,18 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	}
 
 	peer.OnICEConnectionStateChange(func(is webrtc.ICEConnectionState) {
-		log.Println(is)
 		if is == webrtc.ICEConnectionStateDisconnected {
 			log.Printf("[Peer - %s]: peer closed\n", uuid)
 			peer.Close()
+			pirtc.decrementStreamUsage()
 			// TODO: need to do something to remove the closed peer from the list
 		} else if is == webrtc.ICEConnectionStateFailed {
 			log.Printf("[Peer - %s]: peer failed\n", uuid)
 			peer.Close()
+			pirtc.decrementStreamUsage()
 		} else if is == webrtc.ICEConnectionStateClosed {
+			log.Printf("[Peer - %s]: peer closed\n", uuid)
+			peer.Close()
 			pirtc.decrementStreamUsage()
 
 		}
@@ -150,7 +155,6 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	<-gatherComplete
 
 	pirtc.Connections[uuid] = peer
-	pirtc.mu.Unlock()
 	return peer.LocalDescription(), nil
 }
 
@@ -183,20 +187,17 @@ func (pirtc *PiRTC) enableStream() error {
 }
 
 func (pirtc *PiRTC) disableStream() error {
-	if pirtc.stream != nil {
-		pirtc.mu.Lock()
-		tracks := pirtc.stream.GetTracks()
-		if len(tracks) > 0 {
-			for _, track := range tracks {
-				if err := track.Close(); err != nil {
-					return err
-				}
+	log.Println("disable stream")
+	tracks := pirtc.stream.GetTracks()
+	if len(tracks) > 0 {
+		for _, track := range tracks {
+			if err := track.Close(); err != nil {
+				return err
 			}
 		}
-		pirtc.stream = nil
-		pirtc.mu.Unlock()
-		log.Println("Camera disable")
 	}
+	pirtc.stream = nil
+	log.Println("Camera disable")
 	return nil
 }
 
@@ -304,16 +305,16 @@ func (pirtc *PiRTC) RecordWithTimer(savePath string, duration time.Duration) err
 			rtpPacket, release, _ := reader.Read()
 			defer release()
 			for _, pkt := range rtpPacket {
-
 				saver.PushVP8(dest, pkt)
 			}
 		}
 	}
+
 }
 
 func (pirtc *PiRTC) incrementStreamUsage() {
 	pirtc.mu.Lock()
-	pirtc.usageStreamCount++
+	pirtc.usageStreamCount = pirtc.usageStreamCount + 1
 	log.Println("Stream usage count: ", pirtc.usageStreamCount)
 	pirtc.mu.Unlock()
 }
@@ -321,7 +322,6 @@ func (pirtc *PiRTC) incrementStreamUsage() {
 func (pirtc *PiRTC) decrementStreamUsage() {
 	pirtc.mu.Lock()
 	defer pirtc.mu.Unlock()
-
 	pirtc.usageStreamCount--
 	log.Println("Stream usage count: ", pirtc.usageStreamCount)
 
