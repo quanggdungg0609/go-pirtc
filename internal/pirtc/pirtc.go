@@ -121,17 +121,14 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 
 	peer.OnICEConnectionStateChange(func(is webrtc.ICEConnectionState) {
 		if is == webrtc.ICEConnectionStateDisconnected {
-			log.Printf("[Peer - %s]: peer closed\n", uuid)
+			log.Printf("[Peer - %s]: peer disconnected\n", uuid)
 			peer.Close()
-			pirtc.decrementStreamUsage()
 			// TODO: need to do something to remove the closed peer from the list
 		} else if is == webrtc.ICEConnectionStateFailed {
 			log.Printf("[Peer - %s]: peer failed\n", uuid)
 			peer.Close()
-			pirtc.decrementStreamUsage()
 		} else if is == webrtc.ICEConnectionStateClosed {
 			log.Printf("[Peer - %s]: peer closed\n", uuid)
-			peer.Close()
 			pirtc.decrementStreamUsage()
 
 		}
@@ -187,7 +184,6 @@ func (pirtc *PiRTC) enableStream() error {
 }
 
 func (pirtc *PiRTC) disableStream() error {
-	log.Println("disable stream")
 	tracks := pirtc.stream.GetTracks()
 	if len(tracks) > 0 {
 		for _, track := range tracks {
@@ -323,6 +319,9 @@ func (pirtc *PiRTC) decrementStreamUsage() {
 	pirtc.mu.Lock()
 	defer pirtc.mu.Unlock()
 	pirtc.usageStreamCount--
+	if pirtc.usageStreamCount < 0 {
+		pirtc.usageStreamCount = 0
+	}
 	log.Println("Stream usage count: ", pirtc.usageStreamCount)
 
 	if pirtc.usageStreamCount == 0 {
