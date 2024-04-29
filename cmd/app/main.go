@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"time"
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
+	"gitlab.lanestel.net/quangdung/go-pirtc/internal/utils"
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
 )
 
@@ -45,6 +47,19 @@ func main() {
 	}
 
 	ctx = context.WithValue(ctx, PrtcKey, prtc)
+
+	// take a shot for the thumnail at the start
+	go func() {
+		if err := prtc.TakeShot(env.Uuid); err != nil {
+			panic(err)
+		}
+		err = utils.UploadImage(env.ApiUri+"cameras/upload-thumbnail", env.Uuid+".jpeg")
+		if err != nil {
+			panic(err)
+		}
+		runtime.Gosched()
+	}()
+
 	// test functionaly of camera(record, take shot and upload img to server)
 	// go func() {
 	// 	err := prtc.RecordWithTimer(env.VideoPath, time.Duration(10)*time.Second)
@@ -52,20 +67,6 @@ func main() {
 	// 		panic(err)
 	// 	}
 	// }()
-
-	// // take a shot
-	// time.AfterFunc(time.Duration(5)*time.Second, func() {
-	// 	if err := prtc.TakeShot(env.Uuid); err != nil {
-	// 		panic(err)
-	// 	}
-	// 	log.Println("apiUri: ", env.ApiUri+"cameras/upload-thumbnail")
-	// 	log.Println("pathFile: ", env.Uuid+".jpeg")
-
-	// 	err = utils.UploadImage(env.ApiUri+"cameras/upload-image", env.Uuid+".jpeg")
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// })
 
 	// connect to websocket
 	wsClient, err := ws.Connect(env.WsUri, nil)
@@ -87,6 +88,9 @@ func main() {
 	wsClient.EmitMessage("camera-connect", payload)
 	wsClient.EmitMessage("request-list-users", payload)
 	go wsClient.ListenAndServe(callbacks, disconnectChan)
+	go callFunctionTimer(func() {
+
+	}, 2, quitChan)
 
 	for {
 		select {
@@ -94,6 +98,8 @@ func main() {
 			log.Println("Quitting....")
 			close(disconnectChan)
 			os.Exit(0)
+		default:
+
 		}
 		runtime.Gosched()
 	}
@@ -164,4 +170,18 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 	callbacks["ice-candidate"] = func(data interface{}) {}
 
 	return callbacks
+}
+
+func callFunctionTimer(function func(), period int, quitChan chan os.Signal) {
+	ticker := time.NewTicker(time.Duration(period) * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-ticker.C:
+			function()
+		default:
+		}
+	}
 }

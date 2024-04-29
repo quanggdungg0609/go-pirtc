@@ -29,8 +29,7 @@ func UploadImage(uri string, path string) error {
 	requestBody := &bytes.Buffer{}
 	writer := multipart.NewWriter(requestBody)
 
-	log.Println(filepath.Base(path))
-	part, err := CreateFormFileImage(writer, "file", filepath.Base(path))
+	part, err := createFormFileImage(writer, "file", filepath.Base(path))
 	if err != nil {
 		return err
 	}
@@ -46,7 +45,6 @@ func UploadImage(uri string, path string) error {
 		return err
 	}
 
-	log.Println(writer.FormDataContentType())
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	client := &http.Client{}
@@ -59,13 +57,30 @@ func UploadImage(uri string, path string) error {
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("unexpected response: %s", resp.Status)
 	}
-	log.Println("Image Uploaded")
+	log.Println("Thumnail Uploaded")
 	return nil
 }
 
-func CreateFormFileImage(w *multipart.Writer, fieldname string, filename string) (io.Writer, error) {
+func UploadVideo(uri string, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return nil
+}
+
+func createFormFileImage(w *multipart.Writer, fieldname string, filename string) (io.Writer, error) {
 	h := make(textproto.MIMEHeader)
 	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s";  filename="%s"`, escapeQuotes(fieldname), escapeQuotes(filename)))
 	h.Set("Content-Type", "image/jpeg")
+	return w.CreatePart(h)
+}
+
+func createFormFileVideo(w *multipart.Writer, fieldname string, filename string) (io.Writer, error) {
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s";  filename="%s"`, escapeQuotes(fieldname), escapeQuotes(filename)))
+	h.Set("Content-Type", "video/webm")
 	return w.CreatePart(h)
 }

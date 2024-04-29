@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -212,22 +213,28 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	videoTrack := track.(*mediadevices.VideoTrack)
 
 	videoReader := videoTrack.NewReader(false)
-	time.AfterFunc(time.Duration(1)*time.Second, func() {
-		frame, release, _ := videoReader.Read()
-		defer release()
+	// ticker := time.NewTicker(time.Duration(2) * time.Second)
+	// defer ticker.Stop()
+	// select {
+	// case <-ticker.C:
+	frame, release, _ := videoReader.Read()
+	defer release()
 
-		nameImg := name + ".jpeg"
-		output, err := os.Create(nameImg)
-		if err != nil {
-			panic(err)
-		}
-		err = jpeg.Encode(output, frame, nil)
-		if err != nil {
-			panic(err)
-		}
-	})
+	nameImg := name + ".jpeg"
+	output, err := os.Create(nameImg)
+	if err != nil {
+		panic(err)
+	}
+	err = jpeg.Encode(output, frame, nil)
+	if err != nil {
+		panic(err)
+	}
+	// 	runtime.Gosched()
+	// }
+	// time.AfterFunc(time.Duration(1)*time.Second, func() {
+
+	// })
 	log.Println("Captured Image")
-
 	return nil
 }
 
@@ -264,6 +271,7 @@ func (pirtc *PiRTC) Record(savePath string, stopCh chan struct{}) error {
 				saver.PushVP8(dest, pkt)
 			}
 		}
+		runtime.Gosched()
 	}
 }
 
@@ -304,6 +312,8 @@ func (pirtc *PiRTC) RecordWithTimer(savePath string, duration time.Duration) err
 				saver.PushVP8(dest, pkt)
 			}
 		}
+		runtime.Gosched()
+
 	}
 
 }

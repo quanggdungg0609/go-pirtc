@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 
@@ -98,6 +99,7 @@ func (ws *WS) ListenAndServe(callbacks map[string]func(interface{}), disconnect 
 			} else {
 				log.Printf("Received event [%s]: %s\n", message.Event, message.Data)
 			}
+			runtime.Gosched()
 		}
 	}
 }
