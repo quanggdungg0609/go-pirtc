@@ -107,7 +107,6 @@ func UploadVideo(uri string, path string, camUuid string) error {
 	if err != nil {
 		return err
 	}
-
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	client := &http.Client{}
@@ -120,7 +119,6 @@ func UploadVideo(uri string, path string, camUuid string) error {
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("unexpected response: %s", resp.Status)
 	}
-	log.Println("Video Uploaded")
 	return nil
 }
 

@@ -243,10 +243,9 @@ func (pirtc *PiRTC) Record(savePath string, stopCh chan struct{}) chan struct{} 
 	doneChan := make(chan struct{})
 
 	go pirtc.record(savePath, doneChan)
-	select {
-	case <-stopCh:
-		close(doneChan)
-	}
+	<-stopCh
+	close(doneChan)
+
 	return doneChan
 }
 
@@ -258,11 +257,10 @@ func (pirtc *PiRTC) RecordWithTimer(savePath string, duration time.Duration) cha
 	doneChan := make(chan struct{})
 	timer := time.NewTimer(duration)
 	go pirtc.record(savePath, doneChan)
-	select {
-	case <-timer.C:
-		close(doneChan)
-		timer.Stop()
-	}
+	<-timer.C
+	close(doneChan)
+	timer.Stop()
+
 	return doneChan
 }
 
@@ -283,7 +281,6 @@ func (pirtc *PiRTC) record(savePath string, stopChan <-chan struct{}) {
 	for {
 		select {
 		case <-stopChan:
-			log.Println("Video Recorded")
 			return
 		default:
 			rtpPacket, release, _ := reader.Read()

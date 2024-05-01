@@ -67,6 +67,11 @@ func main() {
 
 		<-doneChan
 		log.Printf("Video saved in: %v \n", dest)
+		err := utils.UploadVideo(env.ApiUri+"api/cameras/upload-video", dest, env.Uuid)
+		if err != nil {
+			panic(err)
+		}
+		log.Println("Video Uploaded")
 
 	}()
 
