@@ -11,12 +11,28 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 
 func escapeQuotes(s string) string {
 	return quoteEscaper.Replace(s)
+}
+
+func GetCurrentTimeStr() string {
+	currentTime := time.Now()
+
+	hour := currentTime.Hour()
+	minute := currentTime.Minute()
+	second := currentTime.Second()
+	day := currentTime.Day()
+	month := currentTime.Month()
+	year := currentTime.Year()
+
+	timeString := fmt.Sprintf("%02d%02d%02d_%02d%02d%d", hour, minute, second, day, month, year)
+
+	return timeString
 }
 
 func UploadImage(uri string, path string) error {
@@ -61,13 +77,50 @@ func UploadImage(uri string, path string) error {
 	return nil
 }
 
-func UploadVideo(uri string, path string) error {
+func UploadVideo(uri string, path string, camUuid string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
+	requestBody := &bytes.Buffer{}
+	writer := multipart.NewWriter(requestBody)
+
+	err = writer.WriteField("camera-uuid", camUuid)
+	if err != nil {
+		return err
+	}
+
+	part, err := createFormFileVideo(writer, "file", filepath.Base(path))
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(part, file)
+	if err != nil {
+		return err
+	}
+	writer.Close()
+
+	req, err := http.NewRequest("POST", uri, requestBody)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("unexpected response: %s", resp.Status)
+	}
+	log.Println("Video Uploaded")
 	return nil
 }
 

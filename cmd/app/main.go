@@ -53,7 +53,7 @@ func main() {
 		if err := prtc.TakeShot(env.Uuid); err != nil {
 			panic(err)
 		}
-		err = utils.UploadImage(env.ApiUri+"cameras/upload-thumbnail", env.Uuid+".jpeg")
+		err = utils.UploadImage(env.ApiUri+"api/cameras/upload-thumbnail", env.Uuid+".jpeg")
 		if err != nil {
 			panic(err)
 		}
@@ -61,12 +61,14 @@ func main() {
 	}()
 
 	// test functionaly of camera(record, take shot and upload img to server)
-	// go func() {
-	// 	err := prtc.RecordWithTimer(env.VideoPath, time.Duration(10)*time.Second)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// }()
+	go func() {
+		dest := env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
+		doneChan := prtc.RecordWithTimer(dest, time.Duration(10)*time.Second)
+
+		<-doneChan
+		log.Printf("Video saved in: %v \n", dest)
+
+	}()
 
 	// connect to websocket
 	wsClient, err := ws.Connect(env.WsUri, nil)
@@ -181,7 +183,7 @@ func callFunctionTimer(function func(), period int, quitChan chan os.Signal) {
 			return
 		case <-ticker.C:
 			function()
-		default:
 		}
+		runtime.Gosched()
 	}
 }

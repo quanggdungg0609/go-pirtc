@@ -2,7 +2,6 @@ package pirtc
 
 import (
 	"errors"
-	"fmt"
 	"image/jpeg"
 	"log"
 	"math/rand"
@@ -238,84 +237,63 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	return nil
 }
 
-func (pirtc *PiRTC) Record(savePath string, stopCh chan struct{}) error {
+func (pirtc *PiRTC) Record(savePath string, stopCh chan struct{}) chan struct{} {
 	// enableStream if necessary
-	pirtc.enableStream()
-	log.Println(pirtc.stream)
-	pirtc.incrementStreamUsage()
-	defer pirtc.decrementStreamUsage()
 
-	saver := newWebmSaver()
-	dest := savePath + "/" + getCurrentTimeStr() + ".webM"
-	videoTrack := pirtc.stream.GetVideoTracks()[0].(*mediadevices.VideoTrack)
+	doneChan := make(chan struct{})
 
-	reader, err := videoTrack.NewRTPReader(pirtc.params.RTPCodec().MimeType, rand.Uint32(), 1000)
-	if err != nil {
-		return err
+	go pirtc.record(savePath, doneChan)
+	select {
+	case <-stopCh:
+		close(doneChan)
 	}
-	log.Println("Recording video...")
-
-	defer reader.Close()
-
-	defer pirtc.decrementStreamUsage()
-	for {
-		select {
-		case <-stopCh:
-			log.Println("Video Recorded")
-			return nil
-		default:
-			rtpPacket, release, _ := reader.Read()
-			defer release()
-			for _, pkt := range rtpPacket {
-
-				saver.PushVP8(dest, pkt)
-			}
-		}
-		runtime.Gosched()
-	}
+	return doneChan
 }
 
-func (pirtc *PiRTC) RecordWithTimer(savePath string, duration time.Duration) error {
+func (pirtc *PiRTC) RecordWithTimer(savePath string, duration time.Duration) chan struct{} {
 	/*
 	* Record video to @params savePath in @params second seconds
+	* Return the name of video after recored
 	 */
+	doneChan := make(chan struct{})
+	timer := time.NewTimer(duration)
+	go pirtc.record(savePath, doneChan)
+	select {
+	case <-timer.C:
+		close(doneChan)
+		timer.Stop()
+	}
+	return doneChan
+}
 
-	// enableStream if necessary
+func (pirtc *PiRTC) record(savePath string, stopChan <-chan struct{}) {
 	pirtc.enableStream()
-	log.Println(pirtc.stream)
 	pirtc.incrementStreamUsage()
 	defer pirtc.decrementStreamUsage()
 
 	saver := newWebmSaver()
-	dest := savePath + "/" + getCurrentTimeStr() + ".webM"
 	videoTrack := pirtc.stream.GetVideoTracks()[0].(*mediadevices.VideoTrack)
-
 	reader, err := videoTrack.NewRTPReader(pirtc.params.RTPCodec().MimeType, rand.Uint32(), 1000)
 	if err != nil {
-		return err
+		panic(err)
 	}
-	log.Println("Recording video...")
-	timer := time.NewTimer(duration)
-
 	defer reader.Close()
 
-	defer pirtc.decrementStreamUsage()
+	log.Println("Recording video...")
 	for {
 		select {
-		case <-timer.C:
+		case <-stopChan:
 			log.Println("Video Recorded")
-			return nil
+			return
 		default:
 			rtpPacket, release, _ := reader.Read()
 			defer release()
 			for _, pkt := range rtpPacket {
-				saver.PushVP8(dest, pkt)
+				saver.PushVP8(savePath, pkt)
 			}
 		}
 		runtime.Gosched()
-
 	}
-
 }
 
 func (pirtc *PiRTC) incrementStreamUsage() {
@@ -357,19 +335,4 @@ func CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescripti
 
 	sd.SDP = sdp
 	return sd
-}
-
-func getCurrentTimeStr() string {
-	currentTime := time.Now()
-
-	hour := currentTime.Hour()
-	minute := currentTime.Minute()
-	second := currentTime.Second()
-	day := currentTime.Day()
-	month := currentTime.Month()
-	year := currentTime.Year()
-
-	timeString := fmt.Sprintf("%02d%02d%02d_%02d%02d%d", hour, minute, second, day, month, year)
-
-	return timeString
 }
