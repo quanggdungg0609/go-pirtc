@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
+	"log"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -13,40 +13,9 @@ import (
 )
 
 type payload struct {
-	MacAdr   string `json:"macAdr"`
 	Uuid     string `json:"uuid"`
 	Name     string `json:"name"`
 	Location string `json:"location"`
-}
-
-func getMacAdr() (string, error) {
-	ifas, err := net.Interfaces()
-	if err != nil {
-		return "", err
-	}
-	var as []string
-	for _, ifa := range ifas {
-		a := ifa.HardwareAddr.String()
-		if a != "" {
-			as = append(as, a)
-		}
-	}
-	macAdr := getMostRepeat(as)
-	return macAdr, nil
-}
-
-func getMostRepeat[T comparable](slice []T) T {
-	hashMap := make(map[T]int)
-	var mostRepeat T
-	maxCount := 0
-	for _, t := range slice {
-		hashMap[t]++
-		if hashMap[t] > maxCount {
-			mostRepeat = t
-			maxCount = hashMap[t]
-		}
-	}
-	return mostRepeat
 }
 
 func getUuid() (string, error) {
@@ -84,35 +53,39 @@ func checkKeyExist(key string) (bool, error) {
 	return exists, nil
 }
 
-func getApiKey(apiUri string, macAdr string, uuid string, name string, location string) (string, error) {
+func getApiKey(apiUri string, uuid string, name string, location string) (string, error) {
 	payload := payload{
-		MacAdr:   macAdr,
 		Uuid:     uuid,
 		Name:     name,
 		Location: location,
 	}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
+		log.Println(err)
 		return "", err
 	}
 
-	response, err := http.Post(apiUri+"/cameras/register", "application/json", bytes.NewBuffer(jsonData))
+	response, err := http.Post(apiUri+"api/cameras/register", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
+		log.Println(err)
 		return "", err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode >= 400 {
+		log.Println(errors.New(response.Status))
 		return "", errors.New(response.Status)
 	}
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
+		log.Println(err)
 		return "", err
 	}
 
 	var result map[string]interface{}
 	err = json.Unmarshal(body, &result)
 	if err != nil {
+		log.Println(err)
 		return "", err
 	}
 	return result["apiKey"].(string), nil
@@ -120,5 +93,6 @@ func getApiKey(apiUri string, macAdr string, uuid string, name string, location 
 
 func checkApiKeyValid(apiKey string) (bool, error) {
 	// TODO: Need to implement this function
+	
 	return true, nil
 }

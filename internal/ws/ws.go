@@ -30,6 +30,7 @@ func Connect(uri string, header http.Header) (*WS, error) {
 	if header != nil {
 		ws.uri = uri
 		ws.header = header
+
 		ws.ws, _, err = websocket.DefaultDialer.Dial(uri, header)
 		if err != nil {
 			log.Print(err)

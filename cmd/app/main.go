@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -76,7 +77,9 @@ func main() {
 	}()
 
 	// connect to websocket
-	wsClient, err := ws.Connect(env.WsUri, nil)
+	header := http.Header{}
+	header.Set("api-key", env.ApiKey)
+	wsClient, err := ws.Connect(env.WsUri, header)
 	if err != nil {
 		panic(err)
 	}
