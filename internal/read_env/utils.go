@@ -12,10 +12,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type payload struct {
+type payloadGetApiKey struct {
 	Uuid     string `json:"uuid"`
 	Name     string `json:"name"`
 	Location string `json:"location"`
+}
+
+type payloadCheckApiKey struct{
+	ApiKey string `json:"api_key"`
 }
 
 func getUuid() (string, error) {
@@ -54,24 +58,24 @@ func checkKeyExist(key string) (bool, error) {
 }
 
 func getApiKey(apiUri string, uuid string, name string, location string) (string, error) {
-	payload := payload{
+	payload := payloadGetApiKey{
 		Uuid:     uuid,
 		Name:     name,
 		Location: location,
 	}
+	
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		log.Println(err)
 		return "", err
 	}
 
-	response, err := http.Post(apiUri+"api/cameras/register", "application/json", bytes.NewBuffer(jsonData))
+	response, err := http.Post(apiUri+"camera/register/", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		log.Println(err)
 		return "", err
 	}
 	defer response.Body.Close()
-
 	if response.StatusCode >= 400 {
 		log.Println(errors.New(response.Status))
 		return "", errors.New(response.Status)
@@ -83,16 +87,40 @@ func getApiKey(apiUri string, uuid string, name string, location string) (string
 	}
 
 	var result map[string]interface{}
+	// log.Println(body)
 	err = json.Unmarshal(body, &result)
 	if err != nil {
 		log.Println(err)
 		return "", err
 	}
-	return result["apiKey"].(string), nil
+	apiKey, ok := result["api_key"].(string)
+	if !ok {
+		err := errors.New("apiKey not found or is not a string")
+		log.Println(err)
+		return "", err
+	}
+
+	return apiKey, nil
 }
 
-func checkApiKeyValid(apiKey string) (bool, error) {
-	// TODO: Need to implement this function
-	
-	return true, nil
+func checkApiKeyValid(apiUri string, apiKey string) (bool, error) {
+	payload:= payloadCheckApiKey{
+		ApiKey: apiKey,
+	}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		log.Println(err)
+		return false, err
+	}
+
+	response, err := http.Post(apiUri+"camera/verify-api-key/", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Println(err)
+		return false, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == 200 {
+		return true , nil
+	}
+	return false, nil
 }

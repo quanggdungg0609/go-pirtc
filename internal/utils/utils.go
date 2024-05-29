@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -35,7 +34,7 @@ func GetCurrentTimeStr() string {
 	return timeString
 }
 
-func UploadImage(uri string, path string) error {
+func UploadImage(uri string, path string, apiKey string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -62,7 +61,8 @@ func UploadImage(uri string, path string) error {
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-
+	req.Header.Set("X-API-KEY", apiKey)
+	
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -70,14 +70,13 @@ func UploadImage(uri string, path string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected response: %s", resp.Status)
 	}
-	log.Println("Thumnail Uploaded")
 	return nil
 }
 
-func UploadVideo(uri string, path string, camUuid string) error {
+func UploadVideo(uri string, path string, camUuid string, apiKey string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -108,6 +107,7 @@ func UploadVideo(uri string, path string, camUuid string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-API-KEY", apiKey)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -116,7 +116,7 @@ func UploadVideo(uri string, path string, camUuid string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected response: %s", resp.Status)
 	}
 	return nil

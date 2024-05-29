@@ -49,7 +49,7 @@ func ReadEnv() (*Env, error) {
 		log.Println(apiKey)
 	} else {
 		apiKey = os.Getenv("API_KEY")
-		isValid, err := checkApiKeyValid(apiKey)
+		isValid, err := checkApiKeyValid(os.Getenv("API_URI"),apiKey)
 		if err != nil {
 			return nil, errors.New("CANNOT VERIFY API KEY")
 		}

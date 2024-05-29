@@ -56,9 +56,10 @@ func Init() (*PiRTC, error) {
 func (pirtc *PiRTC) NewUser(uuid string) error {
 	if _, ok := pirtc.Connections[uuid]; ok {
 		return errors.New("USER EXIST")
-	} else {
-		pirtc.Connections[uuid] = nil
-	}
+		} else {
+			pirtc.Connections[uuid] = nil
+		}
+	log.Println(pirtc.Connections)
 	return nil
 }
 
@@ -92,6 +93,7 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	pirtc.mu.Lock()
 	defer pirtc.mu.Unlock()
 
+	log.Println(uuid)
 	peer, ok := pirtc.Connections[uuid]
 	if !ok {
 		return nil, errors.New("USER NOT EXISTS")

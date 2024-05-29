@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+
 	"os"
 	"os/signal"
 	"runtime"
@@ -11,6 +12,7 @@ import (
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
+
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/utils"
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
 )
@@ -39,7 +41,7 @@ func main() {
 	}
 
 	ctx = context.WithValue(ctx, EnvKey, env)
-
+	log.Println(env.ApiKey)
 	// log.Println(env.Uuid)
 
 	prtc, err := pirtc.Init()
@@ -54,7 +56,7 @@ func main() {
 		if err := prtc.TakeShot(env.Uuid); err != nil {
 			panic(err)
 		}
-		err = utils.UploadImage(env.ApiUri+"api/cameras/upload-thumbnail", env.Uuid+".jpeg")
+		err = utils.UploadImage(env.ApiUri+"camera/upload-image/", env.Uuid+".jpeg", env.ApiKey)
 		if err != nil {
 			panic(err)
 		}
@@ -68,7 +70,7 @@ func main() {
 
 		<-doneChan
 		log.Printf("Video saved in: %v \n", dest)
-		err := utils.UploadVideo(env.ApiUri+"api/cameras/upload-video", dest, env.Uuid)
+		err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
 		if err != nil {
 			panic(err)
 		}
@@ -79,7 +81,8 @@ func main() {
 	// connect to websocket
 	header := http.Header{}
 	header.Set("api-key", env.ApiKey)
-	wsClient, err := ws.Connect(env.WsUri, header)
+	log.Println(env.WsUri+"ws/camera/"+env.ApiKey+"/")
+	wsClient, err := ws.Connect(env.WsUri+"ws/camera/"+env.ApiKey+"/", header)
 	if err != nil {
 		panic(err)
 	}
@@ -90,13 +93,13 @@ func main() {
 	callbacks := createCallBacks(ctx)
 
 	// register with server
-	payload := map[string]string{
-		"uuid":     env.Uuid,
-		"name":     env.Name,
-		"location": env.Location,
-	}
-	wsClient.EmitMessage("camera-connect", payload)
-	wsClient.EmitMessage("request-list-users", payload)
+	// payload := map[string]string{
+	// 	"uuid":     env.Uuid,
+	// 	"name":     env.Name,
+	// 	"location": env.Location,
+	// }
+	// wsClient.EmitMessage("camera-connect", payload)
+	wsClient.EmitMessage("request-list-users", map[string]string{})
 	go wsClient.ListenAndServe(callbacks, disconnectChan)
 	go callFunctionTimer(func() {
 
@@ -143,6 +146,7 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 	}
 
 	callbacks["response-list-users"] = func(data interface{}) {
+		log.Println(data.([]interface{}))
 		listUsers := data.([]interface{})
 		for _, raw := range listUsers {
 			user := raw.(map[string]interface{})
