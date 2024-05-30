@@ -122,6 +122,9 @@ func UploadVideo(uri string, path string, camUuid string, apiKey string) error {
 	return nil
 }
 
+
+
+
 func createFormFileImage(w *multipart.Writer, fieldname string, filename string) (io.Writer, error) {
 	h := make(textproto.MIMEHeader)
 	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s";  filename="%s"`, escapeQuotes(fieldname), escapeQuotes(filename)))
@@ -135,3 +138,4 @@ func createFormFileVideo(w *multipart.Writer, fieldname string, filename string)
 	h.Set("Content-Type", "video/webm")
 	return w.CreatePart(h)
 }
+

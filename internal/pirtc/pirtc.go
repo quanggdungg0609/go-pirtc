@@ -2,10 +2,12 @@ package pirtc
 
 import (
 	"errors"
+	"fmt"
 	"image/jpeg"
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -214,14 +216,29 @@ func (pirtc *PiRTC) TakeShot(name string) error {
 	videoTrack := track.(*mediadevices.VideoTrack)
 
 	videoReader := videoTrack.NewReader(false)
-	// ticker := time.NewTicker(time.Duration(2) * time.Second)
-	// defer ticker.Stop()
-	// select {
-	// case <-ticker.C:
+
+	// skip first frame for warm up camera	
+	for i := 0; i < 1; i++ {
+		_, release, err := videoReader.Read()
+		if err != nil {
+			return fmt.Errorf("failed to read frame: %v", err)
+		}
+		release()
+	}
+	
+	// take image
 	frame, release, _ := videoReader.Read()
 	defer release()
 
 	nameImg := name + ".jpeg"
+	dir := filepath.Dir(nameImg)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+        // Nếu chưa tồn tại, tạo thư mục
+        err := os.MkdirAll(dir, 0755)
+        if err != nil {
+            panic(fmt.Sprintf("Failed to create directory: %s", err))
+        }
+    }
 	output, err := os.Create(nameImg)
 	if err != nil {
 		panic(err)

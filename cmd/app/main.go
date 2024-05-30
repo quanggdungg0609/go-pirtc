@@ -53,7 +53,9 @@ func main() {
 
 	// take a shot for the thumnail at the start
 	go func() {
-		if err := prtc.TakeShot(env.Uuid); err != nil {
+		dest := "./images" + "/" + utils.GetCurrentTimeStr()
+
+		if err := prtc.TakeShot(dest); err != nil {
 			panic(err)
 		}
 		err = utils.UploadImage(env.ApiUri+"camera/upload-image/", env.Uuid+".jpeg", env.ApiKey)
@@ -182,6 +184,13 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 	}
 
 	callbacks["ice-candidate"] = func(data interface{}) {}
+
+	// callbacks["take-image"] = func(data interface{}){
+	// 	if prtc!=nil{
+	// 		dest := utils.GetCurrentTimeStr()
+	// 		err := prtc.TakeShot("")
+	// 	}
+	// }
 
 	return callbacks
 }
