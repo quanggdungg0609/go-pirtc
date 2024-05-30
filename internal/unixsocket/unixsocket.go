@@ -1,50 +1,67 @@
 package unixsocket
 
 import (
+	"fmt"
+	"io"
 	"net"
-	"sync"
+	"os"
+	"runtime"
 )
 
-// * Act like a Unix Socket client
-type UnixSocket struct {
-	mu   sync.Mutex
-	conn net.Conn
+type UnixSocketClient struct{
+	pid int
+	socketClient net.Conn
 }
 
-func InitSocket(unixFilePath string) (*UnixSocket, error) {
-	conn, err := net.Dial("unix", unixFilePath)
-	if err != nil {
-		return nil, err
+
+func (us *UnixSocketClient) Init(socketPath string) error{
+	var err error
+	us.pid = os.Getegid()
+	us.socketClient, err= net.Dial("unix",socketPath)
+	if err!=nil{
+		return err
 	}
-
-	return &UnixSocket{
-		conn: conn,
-	}, nil
+	return nil
 }
 
-func (us *UnixSocket) ListenAndServe(callback func(interface{}), disChan chan struct{}) {
-	buf := make([]byte, 1024) // buffer
-	for {
-		select {
-		case <-disChan:
-			us.conn.Close()
+func (us *UnixSocketClient) ListenAndServe(handleMessage func(string), disconnect chan struct{}){
+	for{
+		select{
+		case <-disconnect:
+			_ =us.socketClient.Close()
 			return
-		default:
-			n, err := us.conn.Read(buf)
-			if err != nil {
-				panic(err)
-			}
 
-			callback(buf[:n])
+		default:
+			buf:= make([]byte, 1024)
+			byteRead, err:= us.socketClient.Read(buf)
+			if(err!=nil){
+				if (err == io.EOF){
+					return
+				}else{
+					return
+				}
+			}
+			data:= string(buf[:byteRead])
+			if data == "HANDSHAKE" {
+				handshakeMessage := fmt.Sprintf("HANDSHAKE %d", us.pid)
+				_, err = us.socketClient.Write([]byte(handshakeMessage))
+				if err != nil {
+					fmt.Println("Error sending handshake message:", err.Error())
+					break
+				}
+			}else{
+				handleMessage(data)
+			}
+			runtime.Gosched()
 		}
 	}
 }
 
-func (us *UnixSocket) Write(message string) {
-	us.mu.Lock()
-	defer us.mu.Unlock()
-	_, err := us.conn.Write([]byte(message))
+func (us *UnixSocketClient) SendMessage(message string) error {
+    messageWithPID := fmt.Sprintf("[%d] %s", us.pid, message)
+	_, err := us.socketClient.Write([]byte(messageWithPID))
 	if err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }

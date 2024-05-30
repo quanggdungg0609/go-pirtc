@@ -210,10 +210,12 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 			if err := prtc.TakeShot(dest); err != nil {
 				panic(err)
 			}
-			err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
-			if err != nil {
-				panic(err)
-			}
+			go func(){
+				err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
+				if err != nil {
+					panic(err)
+				}
+			}()
 		}
 	}
 
@@ -246,23 +248,25 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 
 	callbacks["stop-record"] = func(data interface{}){
 		from:= data.(map[string]interface{})["from"].(string)
-		if _,exists := stopRecordChans[from];exists{
-			close(stopRecordChans[from])
-			delete(stopRecordChans, from)
-
-			dest := videoPathMap[from]
-			log.Printf("Video saved in: %v \n", dest)
-			err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
-			if err != nil {
-				panic(err)
+		go func(){
+			if _,exists := stopRecordChans[from];exists{
+				close(stopRecordChans[from])
+				delete(stopRecordChans, from)
+	
+				dest := videoPathMap[from]
+				log.Printf("Video saved in: %v \n", dest)
+				err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+				if err != nil {
+					panic(err)
+				}
+				delete(videoPathMap, from)
+				data:=map[string]string{
+					"to":from,
+					"from":env.Uuid,
+				}
+				wsClient.EmitMessage("video-recorded",data)
 			}
-			delete(videoPathMap, from)
-			data:=map[string]string{
-				"to":from,
-				"from":env.Uuid,
-			}
-			wsClient.EmitMessage("video-recorded",data)
-		}
+		}()
 	}
 
 	return callbacks
