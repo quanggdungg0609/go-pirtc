@@ -53,32 +53,32 @@ func main() {
 	ctx = context.WithValue(ctx, PrtcKey, prtc)
 
 	// take a shot for the thumnail at the start
-	go func() {
-		dest := "./images" + "/" + utils.GetCurrentTimeStr()
-		if err := prtc.TakeShot(dest); err != nil {
-			panic(err)
-		}
-		err = utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
-		if err != nil {
-			panic(err)
-		}
-		runtime.Gosched()
-	}()
+	// go func() {
+	// 	dest := "./images" + "/" + utils.GetCurrentTimeStr()
+	// 	if err := prtc.TakeShot(dest); err != nil {
+	// 		panic(err)
+	// 	}
+	// 	err = utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	runtime.Gosched()
+	// }()
 
 	// test functionaly of camera(record, take shot and upload img to server)
-	go func() {
-		dest := env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
-		doneChan := prtc.RecordWithTimer(dest, time.Duration(10)*time.Second)
+	// go func() {
+	// 	dest := env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
+	// 	doneChan := prtc.RecordWithTimer(dest, time.Duration(10)*time.Second)
 
-		<-doneChan
-		log.Printf("Video saved in: %v \n", dest)
-		err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
-		if err != nil {
-			panic(err)
-		}
-		log.Println("Video Uploaded")
+	// 	<-doneChan
+	// 	log.Printf("Video saved in: %v \n", dest)
+	// 	err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	log.Println("Video Uploaded")
 
-	}()
+	// }()
 
 	// connect to websocket
 	header := http.Header{}
@@ -143,11 +143,25 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 	}
 
 	callbacks["user-disconnect"] = func(data interface{}) {
-		err := prtc.UserDisconnect(data.(map[string]interface{})["uuid"].(string))
+		uuid := data.(map[string]interface{})["uuid"].(string)
+		err := prtc.UserDisconnect(uuid)
 		if err != nil {
 			log.Printf("[user-connect error]: %v\n", err)
 		}
-		log.Println(prtc.Connections)
+		log.Printf("User %s disconnected",uuid)
+		if stopChan, exist := stopRecordChans[uuid]; exist{
+			close(stopChan)
+			delete(stopRecordChans,uuid)
+			dest := videoPathMap[uuid]
+			log.Printf("Video saved in: %v \n", dest)
+			err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+			if err != nil {
+				panic(err)
+			}
+			delete(videoPathMap, uuid)
+		}
+
+
 
 	}
 
@@ -243,6 +257,11 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 				panic(err)
 			}
 			delete(videoPathMap, from)
+			data:=map[string]string{
+				"to":from,
+				"from":env.Uuid,
+			}
+			wsClient.EmitMessage("video-recorded",data)
 		}
 	}
 
