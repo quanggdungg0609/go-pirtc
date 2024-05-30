@@ -23,6 +23,7 @@ const (
 	PrtcKey ContextKey = "prtc"
 	WsKey   ContextKey = "wsClient"
 	EnvKey  ContextKey = "env"
+	
 )
 
 func main() {
@@ -54,11 +55,10 @@ func main() {
 	// take a shot for the thumnail at the start
 	go func() {
 		dest := "./images" + "/" + utils.GetCurrentTimeStr()
-
 		if err := prtc.TakeShot(dest); err != nil {
 			panic(err)
 		}
-		err = utils.UploadImage(env.ApiUri+"camera/upload-image/", env.Uuid+".jpeg", env.ApiKey)
+		err = utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
 		if err != nil {
 			panic(err)
 		}
@@ -127,6 +127,10 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 
 	callbacks := make(map[string]func(interface{}))
 
+	videoPathMap:= make(map[string]string)
+	stopRecordChans:= make(map[string]chan struct{})
+
+
 	callbacks["user-connect"] = func(data interface{}) {
 		// data will return @map[string]interface{} with uuid of the new user connect
 		err := prtc.NewUser(data.(map[string]interface{})["uuid"].(string))
@@ -185,15 +189,66 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 
 	callbacks["ice-candidate"] = func(data interface{}) {}
 
-	// callbacks["take-image"] = func(data interface{}){
-	// 	if prtc!=nil{
-	// 		dest := utils.GetCurrentTimeStr()
-	// 		err := prtc.TakeShot("")
-	// 	}
-	// }
+	callbacks["take-image"] = func(data interface{}){
+		log.Println("Take Image Event")
+		if prtc!=nil{
+			dest := env.ImagePath+ "/" +utils.GetCurrentTimeStr()
+			if err := prtc.TakeShot(dest); err != nil {
+				panic(err)
+			}
+			err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	callbacks["start-record"] = func(data interface{}){
+		if prtc!=nil && wsClient !=nil {
+			from:= data.(map[string]interface{})["from"].(string)
+			if _, exists:= stopRecordChans[from]; exists{
+				data:= map[string]string{
+					"uuid":from,
+				}
+				wsClient.EmitMessage("already-recorded",data)
+			}else{
+				stopChan:= make(chan struct{})
+				stopRecordChans[from]=stopChan
+				dest := env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
+				videoPathMap[from]= dest
+				go prtc.Record(dest, stopChan)
+			}
+						
+			// dest := env.ImagePath+ "/" +utils.GetCurrentTimeStr()
+			// if err := prtc.Record(dest); err != nil {
+			// 	panic(err)
+			// }
+			// err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
+			// if err != nil {
+			// 	panic(err)
+			// }
+		}
+	}
+
+	callbacks["stop-record"] = func(data interface{}){
+		from:= data.(map[string]interface{})["from"].(string)
+		if _,exists := stopRecordChans[from];exists{
+			close(stopRecordChans[from])
+			delete(stopRecordChans, from)
+
+			dest := videoPathMap[from]
+			log.Printf("Video saved in: %v \n", dest)
+			err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+			if err != nil {
+				panic(err)
+			}
+			delete(videoPathMap, from)
+		}
+	}
 
 	return callbacks
 }
+
 
 func callFunctionTimer(function func(), period int, quitChan chan os.Signal) {
 	ticker := time.NewTicker(time.Duration(period) * time.Hour)
