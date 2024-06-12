@@ -8,10 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"time"
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
+	"gitlab.lanestel.net/quangdung/go-pirtc/internal/unixsocket"
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/utils"
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
@@ -23,7 +23,7 @@ const (
 	PrtcKey ContextKey = "prtc"
 	WsKey   ContextKey = "wsClient"
 	EnvKey  ContextKey = "env"
-	
+	UsKey ContextKey = "unix"
 )
 
 func main() {
@@ -42,43 +42,19 @@ func main() {
 	}
 
 	ctx = context.WithValue(ctx, EnvKey, env)
-	log.Println(env.ApiKey)
-	// log.Println(env.Uuid)
 
+	// setting cleanup function
+	folderPaths := []string{env.VideoPath, env.ImagePath}
+
+	go utils.RunPeriodicFileCleanup(folderPaths, 24, disconnectChan)
+
+	// setting pirtc
 	prtc, err := pirtc.Init()
 	if err != nil {
 		panic(err)
 	}
 
 	ctx = context.WithValue(ctx, PrtcKey, prtc)
-
-	// take a shot for the thumnail at the start
-	// go func() {
-	// 	dest := "./images" + "/" + utils.GetCurrentTimeStr()
-	// 	if err := prtc.TakeShot(dest); err != nil {
-	// 		panic(err)
-	// 	}
-	// 	err = utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	runtime.Gosched()
-	// }()
-
-	// test functionaly of camera(record, take shot and upload img to server)
-	// go func() {
-	// 	dest := env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
-	// 	doneChan := prtc.RecordWithTimer(dest, time.Duration(10)*time.Second)
-
-	// 	<-doneChan
-	// 	log.Printf("Video saved in: %v \n", dest)
-	// 	err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	log.Println("Video Uploaded")
-
-	// }()
 
 	// connect to websocket
 	header := http.Header{}
@@ -88,24 +64,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	ctx = context.WithValue(ctx, WsKey, wsClient)
-
 	//create callbacks for each event
 	callbacks := createCallBacks(ctx)
-
-	// register with server
-	// payload := map[string]string{
-	// 	"uuid":     env.Uuid,
-	// 	"name":     env.Name,
-	// 	"location": env.Location,
-	// }
-	// wsClient.EmitMessage("camera-connect", payload)
 	wsClient.EmitMessage("request-list-users", map[string]string{})
 	go wsClient.ListenAndServe(callbacks, disconnectChan)
-	go callFunctionTimer(func() {
+	
+	// connect to unix socket
+	var unixClient unixsocket.UnixSocketClient
+	unixClient.Init(env.UnixPath)
 
-	}, 2, quitChan)
+	unixCallbacksMap := createUnixCallbacks(ctx)
+	go unixClient.ListenAndServe(unixCallbacksMap, disconnectChan)
 
 	for {
 		select {
@@ -118,6 +88,46 @@ func main() {
 		}
 		runtime.Gosched()
 	}
+}
+
+
+func createUnixCallbacks(ctx context.Context) map[string]map[string]func(string){
+	env := ctx.Value(EnvKey).(*readenv.Env)
+
+	prtc := ctx.Value(PrtcKey).(*pirtc.PiRTC)
+	var stopRecordChan chan struct{}
+	var isRecording  bool = false
+	var dest string 
+	actionMap := map[string]map[string]func(string){
+		"PIR":{
+			"ok":func(param string){
+				log.Println("something moved")
+				if prtc!=nil && !isRecording {
+						stopRecordChan = make(chan struct{})
+						dest = env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
+						go prtc.Record(dest, stopRecordChan)
+						isRecording = true
+
+				}
+			},
+			"ko":func(param string){
+				log.Println("unmoved")
+				if prtc!=nil && isRecording{
+					close(stopRecordChan)
+					log.Printf("Video saved in: %v \n", dest)
+					err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+					if err != nil {
+						panic(err)
+					}
+					log.Printf("Video %s uploaded", dest)
+					dest = ""
+					isRecording = false
+
+				}
+			},
+		},
+	}
+	return actionMap
 }
 
 func createCallBacks(ctx context.Context) map[string]func(interface{}) {
@@ -234,15 +244,6 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 				videoPathMap[from]= dest
 				go prtc.Record(dest, stopChan)
 			}
-						
-			// dest := env.ImagePath+ "/" +utils.GetCurrentTimeStr()
-			// if err := prtc.Record(dest); err != nil {
-			// 	panic(err)
-			// }
-			// err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
-			// if err != nil {
-			// 	panic(err)
-			// }
 		}
 	}
 
@@ -273,16 +274,4 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 }
 
 
-func callFunctionTimer(function func(), period int, quitChan chan os.Signal) {
-	ticker := time.NewTicker(time.Duration(period) * time.Hour)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-quitChan:
-			return
-		case <-ticker.C:
-			function()
-		}
-		runtime.Gosched()
-	}
-}
+

@@ -3,14 +3,18 @@ package unixsocket
 import (
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"runtime"
+	"strings"
 )
 
 type UnixSocketClient struct{
 	pid int
+	isConnected bool
 	socketClient net.Conn
+	
 }
 
 
@@ -21,21 +25,23 @@ func (us *UnixSocketClient) Init(socketPath string) error{
 	if err!=nil{
 		return err
 	}
+	us.isConnected = true
 	return nil
 }
 
-func (us *UnixSocketClient) ListenAndServe(handleMessage func(string), disconnect chan struct{}){
+func (us *UnixSocketClient) ListenAndServe(handleMessageMap map[string]map[string]func(string), disconnect chan struct{}){
 	for{
 		select{
 		case <-disconnect:
 			_ =us.socketClient.Close()
+			us.isConnected = false
 			return
-
 		default:
 			buf:= make([]byte, 1024)
 			byteRead, err:= us.socketClient.Read(buf)
 			if(err!=nil){
 				if (err == io.EOF){
+					log.Println("[Unix Socket] - Connection closed by server")
 					return
 				}else{
 					return
@@ -50,7 +56,27 @@ func (us *UnixSocketClient) ListenAndServe(handleMessage func(string), disconnec
 					break
 				}
 			}else{
-				handleMessage(data)
+				parts := strings.SplitN(data, " ", 3)
+				if len(parts) >= 2{
+					typeAction := parts[0]
+					action := parts[1]
+					param := ""
+					if len(parts) == 3{
+						param = parts[2]
+					}
+					if actionFuncs, ok := handleMessageMap[typeAction]; ok {
+                        if actionFunc, ok := actionFuncs[action]; ok {
+                            actionFunc(param)
+                        } else {
+                            log.Printf("Unknown action %s for typeAction %s\n", action, typeAction)
+                        }
+                    } else {
+                        log.Printf("Unknown typeAction %s\n", typeAction)
+                    }
+
+				}else{
+					log.Println(data)
+				}
 			}
 			runtime.Gosched()
 		}
