@@ -12,7 +12,6 @@ build_pirtc:
         - make build
         - mkdir -p build_artifacts
         - cp ./main build_artifacts/
-        - cp ./.env build_artifacts/
         - echo "Build done"
     artifacts:
         paths:
