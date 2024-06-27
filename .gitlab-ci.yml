@@ -2,7 +2,7 @@ stages:
     - build
 
 before_script:
-    - echo "start"
+    - echo "start build"
 
 build_pirtc:
     stage: build
