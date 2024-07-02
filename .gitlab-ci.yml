@@ -1,0 +1,21 @@
+stages:
+    - build
+
+before_script:
+    - echo "start build"
+
+build_pirtc:
+    stage: build
+    only:
+        - main
+    script:
+        - make build
+        - mkdir -p build_artifacts
+        - cp ./main build_artifacts/
+        - echo "Build done"
+    artifacts:
+        paths:
+            - build_artifacts/
+    tags:
+      - go
+      - shell   
