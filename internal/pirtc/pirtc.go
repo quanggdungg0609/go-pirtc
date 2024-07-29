@@ -38,7 +38,21 @@ type PiRTC struct {
 	mu               sync.Mutex
 }
 
-func Init() (*PiRTC, error) {
+// Singleton instance
+var instance *PiRTC
+var once sync.Once
+
+
+func GetInstance() (*PiRTC, error) {
+    var err error
+    once.Do(func() {
+        instance, err = initPiRTC()
+    })
+    return instance, err
+}
+
+
+func initPiRTC() (*PiRTC, error) {
 	VP8Params, err := vpx.NewVP8Params()
 	if err != nil {
 		return nil, err

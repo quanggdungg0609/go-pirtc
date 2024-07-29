@@ -49,7 +49,7 @@ func main() {
 	go utils.RunPeriodicFileCleanup(folderPaths, 24, disconnectChan)
 
 	// setting pirtc
-	prtc, err := pirtc.Init()
+	prtc, err := pirtc.GetInstance()
 	if err != nil {
 		panic(err)
 	}
@@ -76,6 +76,7 @@ func main() {
 
 	unixCallbacksMap := createUnixCallbacks(ctx)
 	go unixClient.ListenAndServe(unixCallbacksMap, disconnectChan)
+
 
 	for {
 		select {
@@ -117,7 +118,8 @@ func createUnixCallbacks(ctx context.Context) map[string]map[string]func(string)
 					log.Printf("Video saved in: %v \n", dest)
 					err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
 					if err != nil {
-						panic(err)
+						log.Printf(err.Error())
+						log.Printf("Failed to upload to server: %v \n", dest)
 					}
 					log.Printf("Video %s uploaded", dest)
 					dest = ""
@@ -166,7 +168,8 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 			log.Printf("Video saved in: %v \n", dest)
 			err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
 			if err != nil {
-				panic(err)
+				log.Printf(err.Error())
+				log.Printf("Failed to upload to server: %v \n", dest)
 			}
 			delete(videoPathMap, uuid)
 		}
@@ -223,7 +226,8 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 			go func(){
 				err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
 				if err != nil {
-					panic(err)
+					log.Printf(err.Error())
+					log.Printf("Failed to upload to server: %v \n", dest)
 				}
 			}()
 		}
@@ -258,7 +262,8 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 				log.Printf("Video saved in: %v \n", dest)
 				err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
 				if err != nil {
-					panic(err)
+					log.Printf(err.Error())
+					log.Printf("Failed to upload to server: %v \n", dest)
 				}
 				delete(videoPathMap, from)
 				data:=map[string]string{
