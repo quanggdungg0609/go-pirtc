@@ -16,6 +16,8 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	"github.com/pion/mediadevices/pkg/codec/vpx"
+	// "github.com/pion/mediadevices/pkg/codec/x264"
+
 	_ "github.com/pion/mediadevices/pkg/driver/camera"
 	"github.com/pion/mediadevices/pkg/frame"
 	"github.com/pion/mediadevices/pkg/prop"
@@ -24,9 +26,11 @@ import (
 var defaultConfig = webrtc.Configuration{
 	ICEServers: []webrtc.ICEServer{
 		{
-			URLs: []string{"stun:stun.l.google.com:19302"},
+			URLs: []string{"stun:stun.services.mozilla.com", "stun:stun.l.google.com:19302"},
+
 		},
 	},
+	SDPSemantics: webrtc.SDPSemanticsUnifiedPlanWithFallback,
 }
 
 type PiRTC struct {
@@ -152,11 +156,14 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 		}
 	})
 
+	
+
 	err = peer.SetRemoteDescription(offerSD)
 	if err != nil {
 		return nil, err
 	}
 
+	
 	answerSD, err := peer.CreateAnswer(nil)
 	if err != nil {
 		return nil, err
@@ -181,10 +188,12 @@ func (pirtc *PiRTC) enableStream() error {
 	defer pirtc.mu.Unlock()
 	if pirtc.stream == nil {
 		var err error
-
-		codecSelector := mediadevices.NewCodecSelector(mediadevices.WithVideoEncoders(&pirtc.params))
+		codecSelector := mediadevices.NewCodecSelector(
+			mediadevices.WithVideoEncoders(&pirtc.params),
+		)
 		codecSelector.Populate(&pirtc.mediaEngine)
 
+		
 		pirtc.stream, err = mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
 			Video: func(constraint *mediadevices.MediaTrackConstraints) {
 				constraint.FrameFormat = prop.FrameFormat(frame.FormatI420)

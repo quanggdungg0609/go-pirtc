@@ -1,7 +1,7 @@
 SOURCE := main
 GO_CROSS_COMPILER_PATH := /usr/local/go/bin
 # Build command for Raspberry Pi
-BUILD_CMD := env GOOS=linux GOARCH=arm $(GO_CROSS_COMPILER_PATH)/go build  ./cmd/app/main.go 
+BUILD_CMD := env GOOS=linux GOARCH=arm CGO_ENABLED=1 $(GO_CROSS_COMPILER_PATH)/go build  ./cmd/app/main.go 
 
 
 
