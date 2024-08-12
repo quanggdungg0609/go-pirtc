@@ -9,9 +9,12 @@ import (
 	"os/signal"
 	"runtime"
 
-	"gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
+	// "gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc"
+	pirtc_ffmpeg "gitlab.lanestel.net/quangdung/go-pirtc/internal/pirtc-ffmpeg"
+
 	readenv "gitlab.lanestel.net/quangdung/go-pirtc/internal/read_env"
-	"gitlab.lanestel.net/quangdung/go-pirtc/internal/unixsocket"
+
+	// "gitlab.lanestel.net/quangdung/go-pirtc/internal/unixsocket"
 
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/utils"
 	"gitlab.lanestel.net/quangdung/go-pirtc/internal/ws"
@@ -49,7 +52,7 @@ func main() {
 	go utils.RunPeriodicFileCleanup(folderPaths, 24, disconnectChan)
 
 	// setting pirtc
-	prtc, err := pirtc.Init()
+	prtc, err := pirtc_ffmpeg.Init()
 	if err != nil {
 		panic(err)
 	}
@@ -71,11 +74,11 @@ func main() {
 	go wsClient.ListenAndServe(callbacks, disconnectChan)
 	
 	// connect to unix socket
-	var unixClient unixsocket.UnixSocketClient
-	unixClient.Init(env.UnixPath)
+	// var unixClient unixsocket.UnixSocketClient
+	// unixClient.Init(env.UnixPath)
 
-	unixCallbacksMap := createUnixCallbacks(ctx)
-	go unixClient.ListenAndServe(unixCallbacksMap, disconnectChan)
+	// unixCallbacksMap := createUnixCallbacks(ctx)
+	// go unixClient.ListenAndServe(unixCallbacksMap, disconnectChan)
 
 	for {
 		select {
@@ -91,54 +94,54 @@ func main() {
 }
 
 
-func createUnixCallbacks(ctx context.Context) map[string]map[string]func(string){
-	env := ctx.Value(EnvKey).(*readenv.Env)
+// func createUnixCallbacks(ctx context.Context) map[string]map[string]func(string){
+// 	env := ctx.Value(EnvKey).(*readenv.Env)
 
-	prtc := ctx.Value(PrtcKey).(*pirtc.PiRTC)
-	var stopRecordChan chan struct{}
-	var isRecording  bool = false
-	var dest string 
-	actionMap := map[string]map[string]func(string){
-		"PIR":{
-			"ok":func(param string){
-				log.Println("something moved")
-				if prtc!=nil && !isRecording {
-						stopRecordChan = make(chan struct{})
-						dest = env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
-						go prtc.Record(dest, stopRecordChan)
-						isRecording = true
+// 	prtc := ctx.Value(PrtcKey).(*pirtc.PiRTC)
+// 	var stopRecordChan chan struct{}
+// 	var isRecording  bool = false
+// 	var dest string 
+// 	actionMap := map[string]map[string]func(string){
+// 		"PIR":{
+// 			"ok":func(param string){
+// 				log.Println("something moved")
+// 				if prtc!=nil && !isRecording {
+// 						stopRecordChan = make(chan struct{})
+// 						dest = env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
+// 						go prtc.Record(dest, stopRecordChan)
+// 						isRecording = true
 
-				}
-			},
-			"ko":func(param string){
-				log.Println("unmoved")
-				if prtc!=nil && isRecording{
-					close(stopRecordChan)
-					log.Printf("Video saved in: %v \n", dest)
-					err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
-					if err != nil {
-						panic(err)
-					}
-					log.Printf("Video %s uploaded", dest)
-					dest = ""
-					isRecording = false
+// 				}
+// 			},
+// 			"ko":func(param string){
+// 				log.Println("unmoved")
+// 				if prtc!=nil && isRecording{
+// 					close(stopRecordChan)
+// 					log.Printf("Video saved in: %v \n", dest)
+// 					err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+// 					if err != nil {
+// 						panic(err)
+// 					}
+// 					log.Printf("Video %s uploaded", dest)
+// 					dest = ""
+// 					isRecording = false
 
-				}
-			},
-		},
-	}
-	return actionMap
-}
+// 				}
+// 			},
+// 		},
+// 	}
+// 	return actionMap
+// }
 
 func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 	env := ctx.Value(EnvKey).(*readenv.Env)
-	prtc := ctx.Value(PrtcKey).(*pirtc.PiRTC)
+	prtc := ctx.Value(PrtcKey).(*pirtc_ffmpeg.PiRTC)
 	wsClient := ctx.Value(WsKey).(*ws.WS)
 
 	callbacks := make(map[string]func(interface{}))
 
-	videoPathMap:= make(map[string]string)
-	stopRecordChans:= make(map[string]chan struct{})
+	// videoPathMap:= make(map[string]string)
+	// stopRecordChans:= make(map[string]chan struct{})
 
 
 	callbacks["user-connect"] = func(data interface{}) {
@@ -159,17 +162,17 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 			log.Printf("[user-connect error]: %v\n", err)
 		}
 		log.Printf("User %s disconnected",uuid)
-		if stopChan, exist := stopRecordChans[uuid]; exist{
-			close(stopChan)
-			delete(stopRecordChans,uuid)
-			dest := videoPathMap[uuid]
-			log.Printf("Video saved in: %v \n", dest)
-			err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
-			if err != nil {
-				panic(err)
-			}
-			delete(videoPathMap, uuid)
-		}
+		// if stopChan, exist := stopRecordChans[uuid]; exist{
+		// 	close(stopChan)
+		// 	delete(stopRecordChans,uuid)
+		// 	dest := videoPathMap[uuid]
+		// 	log.Printf("Video saved in: %v \n", dest)
+		// 	err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+		// 	if err != nil {
+		// 		panic(err)
+		// 	}
+		// 	delete(videoPathMap, uuid)
+		// }
 
 
 
@@ -188,7 +191,7 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 	callbacks["offer-sd"] = func(data interface{}) {
 		if prtc != nil {
 			payload := data.(map[string]interface{})
-			offerSd := pirtc.CreateSessionDescription(payload["type"].(string), payload["sdp"].(string))
+			offerSd := pirtc_ffmpeg.CreateSessionDescription(payload["type"].(string), payload["sdp"].(string))
 			answerSd, err := prtc.Answer(payload["from"].(string), offerSd)
 			if err != nil {
 				panic(err)
@@ -213,62 +216,62 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 
 	callbacks["ice-candidate"] = func(data interface{}) {}
 
-	callbacks["take-image"] = func(data interface{}){
-		log.Println("Take Image Event")
-		if prtc!=nil{
-			dest := env.ImagePath+ "/" +utils.GetCurrentTimeStr()
-			if err := prtc.TakeShot(dest); err != nil {
-				panic(err)
-			}
-			go func(){
-				err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
-				if err != nil {
-					panic(err)
-				}
-			}()
-		}
-	}
+	// callbacks["take-image"] = func(data interface{}){
+	// 	log.Println("Take Image Event")
+	// 	if prtc!=nil{
+	// 		dest := env.ImagePath+ "/" +utils.GetCurrentTimeStr()
+	// 		if err := prtc.TakeShot(dest); err != nil {
+	// 			panic(err)
+	// 		}
+	// 		go func(){
+	// 			err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
+	// 			if err != nil {
+	// 				panic(err)
+	// 			}
+	// 		}()
+	// 	}
+	// }
 
-	callbacks["start-record"] = func(data interface{}){
-		if prtc!=nil && wsClient !=nil {
-			from:= data.(map[string]interface{})["from"].(string)
-			if _, exists:= stopRecordChans[from]; exists{
-				data:= map[string]string{
-					"uuid":from,
-				}
-				wsClient.EmitMessage("already-recorded",data)
-			}else{
-				stopChan:= make(chan struct{})
-				stopRecordChans[from]=stopChan
-				dest := env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
-				videoPathMap[from]= dest
-				go prtc.Record(dest, stopChan)
-			}
-		}
-	}
+	// callbacks["start-record"] = func(data interface{}){
+	// 	if prtc!=nil && wsClient !=nil {
+	// 		from:= data.(map[string]interface{})["from"].(string)
+	// 		if _, exists:= stopRecordChans[from]; exists{
+	// 			data:= map[string]string{
+	// 				"uuid":from,
+	// 			}
+	// 			wsClient.EmitMessage("already-recorded",data)
+	// 		}else{
+	// 			stopChan:= make(chan struct{})
+	// 			stopRecordChans[from]=stopChan
+	// 			dest := env.VideoPath + "/" + utils.GetCurrentTimeStr() + ".webM"
+	// 			videoPathMap[from]= dest
+	// 			go prtc.Record(dest, stopChan)
+	// 		}
+	// 	}
+	// }
 
-	callbacks["stop-record"] = func(data interface{}){
-		from:= data.(map[string]interface{})["from"].(string)
-		go func(){
-			if _,exists := stopRecordChans[from];exists{
-				close(stopRecordChans[from])
-				delete(stopRecordChans, from)
+	// callbacks["stop-record"] = func(data interface{}){
+	// 	from:= data.(map[string]interface{})["from"].(string)
+	// 	go func(){
+	// 		if _,exists := stopRecordChans[from];exists{
+	// 			close(stopRecordChans[from])
+	// 			delete(stopRecordChans, from)
 	
-				dest := videoPathMap[from]
-				log.Printf("Video saved in: %v \n", dest)
-				err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
-				if err != nil {
-					panic(err)
-				}
-				delete(videoPathMap, from)
-				data:=map[string]string{
-					"to":from,
-					"from":env.Uuid,
-				}
-				wsClient.EmitMessage("video-recorded",data)
-			}
-		}()
-	}
+	// 			dest := videoPathMap[from]
+	// 			log.Printf("Video saved in: %v \n", dest)
+	// 			err := utils.UploadVideo(env.ApiUri+"camera/upload-video/", dest, env.Uuid, env.ApiKey)
+	// 			if err != nil {
+	// 				panic(err)
+	// 			}
+	// 			delete(videoPathMap, from)
+	// 			data:=map[string]string{
+	// 				"to":from,
+	// 				"from":env.Uuid,
+	// 			}
+	// 			wsClient.EmitMessage("video-recorded",data)
+	// 		}
+	// 	}()
+	// }
 
 	return callbacks
 }
