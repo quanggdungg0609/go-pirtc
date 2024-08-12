@@ -21,16 +21,27 @@ var defaultConfig = webrtc.Configuration{
 
 type PiRTC struct {
 	usageStreamCount int
+
 	ffmpegRtp        *FFmpegRTP
 	listener         *net.UDPConn
+	track *webrtc.TrackLocalStaticRTP
 	Connections      map[string]*webrtc.PeerConnection
 	mu               sync.Mutex
 }
 
 func Init() (*PiRTC, error) {
+	listener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5004})
+		if err != nil {
+			panic(err)
+		}
+		bufferSize := 300000 // 300KB
+		err = listener.SetReadBuffer(bufferSize)
+		if err != nil {
+			panic(err)
+		}
 	pirtc := &PiRTC{
 		usageStreamCount: 0,
-		listener:         nil,
+		listener:         listener,
 		Connections:      make(map[string]*webrtc.PeerConnection),
 	}
 	return pirtc, nil
@@ -91,12 +102,8 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	
 
 	// Tạo và thêm videoTrack tại thời điểm Answer
-	videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264}, "video", "pion")
-	if err != nil {
-		return nil, err
-	}
-
-	rtpSender, err := peer.AddTrack(videoTrack)
+	
+	rtpSender, err := peer.AddTrack(pirtc.track)
 	if err != nil {
 		return nil, err
 	}
@@ -143,34 +150,30 @@ func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*web
 	<-gatherComplete
 	pirtc.Connections[uuid] = peer
 	// write rtp into videoTrack
-	go pirtc.receiveRTP(videoTrack)
 	return peer.LocalDescription(), nil
 }
 
 func (pirtc *PiRTC) enableStream() error {
 	pirtc.mu.Lock()
 	defer pirtc.mu.Unlock()
-	if pirtc.listener == nil{
+	if pirtc.ffmpegRtp == nil{
 		pirtc.ffmpegRtp = NewFFmpegRTP("/dev/video0", "rtp://127.0.0.1:5004")
 		err := pirtc.ffmpegRtp.Start()
 		if err != nil {
 			return err
 		}
 		log.Println("RTP Stream Enabled")
-		pirtc.listener, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5004})
+		videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264}, "video", "pion")
 		if err != nil {
-			panic(err)
+			return  err
 		}
-		bufferSize := 300000 // 300KB
-		err = pirtc.listener.SetReadBuffer(bufferSize)
-		if err != nil {
-			panic(err)
-		}
+		pirtc.track = videoTrack
+		go pirtc.receiveRTP()
 	}
 	return nil
 }
 
-func (pirtc *PiRTC) receiveRTP(videoTrack *webrtc.TrackLocalStaticRTP) {
+func (pirtc *PiRTC) receiveRTP() {
 	inboundRTPPacket := make([]byte, 1600)
 	for {
 		n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
@@ -183,7 +186,7 @@ func (pirtc *PiRTC) receiveRTP(videoTrack *webrtc.TrackLocalStaticRTP) {
 			continue
 		}
 
-		if _, err = videoTrack.Write(inboundRTPPacket[:n]); err != nil {
+		if _, err = pirtc.track.Write(inboundRTPPacket[:n]); err != nil {
 				if errors.Is(err, io.ErrClosedPipe) {
 					// The peerConnection has been closed.
 					return
@@ -201,24 +204,6 @@ func (pirtc *PiRTC) incrementStreamUsage() {
 	log.Println("Stream usage count: ", pirtc.usageStreamCount)
 }
 
-func (pirtc *PiRTC) disableStream() error {
-	if pirtc.ffmpegRtp != nil {
-		log.Println("Heerree")
-		err := pirtc.ffmpegRtp.Stop()
-		if err != nil {
-			return err
-		}
-		pirtc.ffmpegRtp = nil
-		err = pirtc.listener.Close()
-		if err != nil {
-			return err
-		}
-		pirtc.listener =nil
-	}
-
-	return nil
-}
-
 func (pirtc *PiRTC) decrementStreamUsage() {
 	pirtc.mu.Lock()
 	defer pirtc.mu.Unlock()
@@ -231,8 +216,25 @@ func (pirtc *PiRTC) decrementStreamUsage() {
 	if pirtc.usageStreamCount == 0 {
 		pirtc.disableStream()
 	}
-
 }
+
+func (pirtc *PiRTC) disableStream() error {
+	if pirtc.ffmpegRtp != nil {
+		err := pirtc.ffmpegRtp.Stop()
+		if err != nil {
+			return err
+		}
+		pirtc.ffmpegRtp = nil
+		// err = pirtc.listener.Close()
+		// if err != nil {
+		// 	return err
+		// }
+		// pirtc.listener =nil
+	}
+
+	return nil
+}
+
 
 func CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription {
 	sd := webrtc.SessionDescription{}

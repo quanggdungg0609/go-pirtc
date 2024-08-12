@@ -16,7 +16,7 @@ type FFmpegRTP struct {
 
 func NewFFmpegRTP(input, output string) *FFmpegRTP {
     ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-f", "v4l2", "-i", input, "-vf", "format=yuv420p", "-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency", "-b:v", "500k", "-f", "rtp", output+"?pkt_size=100")
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-f", "v4l2", "-i", input, "-vf", "format=yuv420p", "-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency", "-b:v", "500k", "-f", "rtp", output+"?pkt_size=1200")
 
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
