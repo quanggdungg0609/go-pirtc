@@ -38,13 +38,11 @@ func (f *FFmpegRTP) Stop() error {
     if f.cancel != nil {
         f.cancel()
         log.Println("Canceled FFmpeg context")
-
-        // Wait for process to exit
-        err := f.cmd.Wait()
-        if err != nil {
-            return fmt.Errorf("failed to wait for ffmpeg to exit: %v", err)
+        if err := f.cmd.Process.Signal(os.Interrupt); err != nil {
+            log.Printf("Failed to send SIGTERM to ffmpeg: %v", err)
+            return fmt.Errorf("failed to send SIGTERM to ffmpeg process: %v", err)
         }
-        log.Println("FFmpeg process exited")
+        log.Println("SIGTERM signal sent to ffmpeg process")
     }
     return nil
 }

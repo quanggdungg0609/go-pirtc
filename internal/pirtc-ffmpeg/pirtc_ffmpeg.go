@@ -2,7 +2,6 @@ package pirtc_ffmpeg
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -167,7 +166,6 @@ func (pirtc *PiRTC) enableStream() error {
 		if err != nil {
 			panic(err)
 		}
-
 	}
 	return nil
 }
@@ -177,12 +175,12 @@ func (pirtc *PiRTC) receiveRTP(videoTrack *webrtc.TrackLocalStaticRTP) {
 	for {
 		n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
 		if err != nil {
-				log.Printf("RTP packet read error: %v\n", err)
-				continue
-		}
-
-		if err != nil {
-				panic(fmt.Sprintf("error during read: %s", err))
+			if errors.Is(err, net.ErrClosed) {
+				log.Println("RTP listener closed, exiting receiveRTP")
+				return
+			}
+			log.Printf("RTP packet read error: %v\n", err)
+			continue
 		}
 
 		if _, err = videoTrack.Write(inboundRTPPacket[:n]); err != nil {
