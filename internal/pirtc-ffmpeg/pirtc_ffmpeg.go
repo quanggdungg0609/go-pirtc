@@ -1,14 +1,23 @@
 package pirtc_ffmpeg
 
 import (
+	"bytes"
 	"errors"
+	"image/jpeg"
 	"io"
 	"log"
 	"net"
+	"os"
 	"runtime"
 	"sync"
 
+	// "github.com/pion/rtp/codecs"
+	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
+	"golang.org/x/image/vp8"
+	// "github.com/pion/webrtc/v4/pkg/media/samplebuilder"
 )
 
 var defaultConfig = webrtc.Configuration{
@@ -19,6 +28,14 @@ var defaultConfig = webrtc.Configuration{
 	},
 }
 
+type PiWebRTC interface{
+	Init() error
+	NewUser(uuid string) error
+	UserDisconnect(uuid string) error
+	Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error)
+	CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription
+}
+
 type PiRTC struct {
 	usageStreamCount int
 
@@ -26,6 +43,7 @@ type PiRTC struct {
 	listener         *net.UDPConn
 	track *webrtc.TrackLocalStaticRTP
 	Connections      map[string]*webrtc.PeerConnection
+	rtpChan chan *rtp.Packet 
 	mu               sync.Mutex
 }
 
@@ -163,7 +181,7 @@ func (pirtc *PiRTC) enableStream() error {
 			return err
 		}
 		log.Println("RTP Stream Enabled")
-		videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264}, "video", "pion")
+		videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", "pion")
 		if err != nil {
 			return  err
 		}
@@ -175,6 +193,7 @@ func (pirtc *PiRTC) enableStream() error {
 
 func (pirtc *PiRTC) receiveRTP() {
 	inboundRTPPacket := make([]byte, 1600)
+	var packet rtp.Packet
 	for {
 		n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
 		if err != nil {
@@ -185,13 +204,20 @@ func (pirtc *PiRTC) receiveRTP() {
 			log.Printf("RTP packet read error: %v\n", err)
 			continue
 		}
-
-		if _, err = pirtc.track.Write(inboundRTPPacket[:n]); err != nil {
+		err = packet.Unmarshal(inboundRTPPacket[:n])
+		if err !=nil{
+			panic(err)
+		}
+		select {
+		case pirtc.rtpChan <- &packet:
+		default:
+			if _, err = pirtc.track.Write(inboundRTPPacket[:n]); err != nil {
 				if errors.Is(err, io.ErrClosedPipe) {
 					// The peerConnection has been closed.
 					return
-		}
-			panic(err)
+				}
+				panic(err)
+			}
 		}
 		runtime.Gosched()
 	}
@@ -230,6 +256,69 @@ func (pirtc *PiRTC) disableStream() error {
 		// 	return err
 		// }
 		// pirtc.listener =nil
+	}
+
+	return nil
+}
+
+func (p *PiRTC) TakeShot(fileName string) error{
+	if p.listener == nil || p.rtpChan == nil {
+		return errors.New("RTP stream is not enabled")
+	}
+
+	sampleBuilder := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
+	decoder := vp8.NewDecoder()
+
+	for packet := range p.rtpChan {
+		sampleBuilder.Push(packet)
+		sample := sampleBuilder.Pop()
+		if sample == nil {
+			continue
+		}
+
+		videoKeyframe := (sample.Data[0] & 0x1) == 0
+		if !videoKeyframe {
+			continue
+		}
+
+		decoder.Init(bytes.NewReader(sample.Data), len(sample.Data))
+
+		if _, err := decoder.DecodeFrameHeader(); err != nil {
+			return err
+		}
+
+		img, err := decoder.DecodeFrame()
+		if err != nil {
+			return err
+		}
+
+		buffer := new(bytes.Buffer)
+		if err := jpeg.Encode(buffer, img, nil); err != nil {
+			return err
+		}
+
+		if err := saveImageToFile(fileName, buffer.Bytes()); err != nil {
+			return err
+		}
+
+		log.Printf("Image captured and saved to %s\n", fileName)
+		break // Stop after capturing one image
+	}
+
+	return nil
+}
+
+
+func saveImageToFile(fileName string, imageData []byte) error {
+	file, err := os.Create(fileName)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(imageData)
+	if err != nil {
+		return err
 	}
 
 	return nil
