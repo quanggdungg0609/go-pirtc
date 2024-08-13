@@ -3,11 +3,13 @@ package pirtc_ffmpeg
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image/jpeg"
 	"io"
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"runtime"
 	"sync"
 
@@ -194,6 +196,7 @@ func (pirtc *PiRTC) enableStream() error {
 func (pirtc *PiRTC) receiveRTP() {
 	inboundRTPPacket := make([]byte, 1600)
 	var packet rtp.Packet
+	pirtc.rtpChan = make(chan *rtp.Packet)
 	for {
 		n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
 		if err != nil {
@@ -214,7 +217,7 @@ func (pirtc *PiRTC) receiveRTP() {
 			if _, err = pirtc.track.Write(inboundRTPPacket[:n]); err != nil {
 				if errors.Is(err, io.ErrClosedPipe) {
 					// The peerConnection has been closed.
-					return
+					return	
 				}
 				panic(err)
 			}
@@ -250,20 +253,31 @@ func (pirtc *PiRTC) disableStream() error {
 		if err != nil {
 			return err
 		}
+	
 		pirtc.ffmpegRtp = nil
-		// err = pirtc.listener.Close()
-		// if err != nil {
-		// 	return err
-		// }
-		// pirtc.listener =nil
+		pirtc.track = nil
 	}
 
 	return nil
 }
 
 func (p *PiRTC) TakeShot(fileName string) error{
-	if p.listener == nil || p.rtpChan == nil {
-		return errors.New("RTP stream is not enabled")
+	err := os.MkdirAll("images", os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("failed to create images directory: %w", err)
+	}
+
+	if p.track == nil || p.rtpChan == nil {
+		// Command to capture image using FFmpeg
+		cmd := exec.Command("ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-vframes", "1", "images/"+fileName+".jpg")
+		
+		err := cmd.Run()
+		if err != nil {
+			return fmt.Errorf("failed to capture image using FFmpeg: %w", err)
+		}
+
+		log.Printf("Image captured using FFmpeg and saved to images/%s.jpg\n", fileName)
+		return nil
 	}
 
 	sampleBuilder := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
@@ -297,32 +311,22 @@ func (p *PiRTC) TakeShot(fileName string) error{
 			return err
 		}
 
-		if err := saveImageToFile(fileName, buffer.Bytes()); err != nil {
+		if err := saveImageToFile("images/"+fileName+".jpg", buffer.Bytes()); err != nil {
 			return err
 		}
 
-		log.Printf("Image captured and saved to %s\n", fileName)
-		break // Stop after capturing one image
+		log.Printf("Image captured from RTP stream and saved to images/%s.jpg\n", fileName)
+		break
 	}
 
 	return nil
 }
 
 
-func saveImageToFile(fileName string, imageData []byte) error {
-	file, err := os.Create(fileName)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = file.Write(imageData)
-	if err != nil {
-		return err
-	}
-
-	return nil
+func saveImageToFile(filePath string, data []byte) error {
+	return os.WriteFile(filePath, data, 0644)
 }
+
 
 
 func CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription {
