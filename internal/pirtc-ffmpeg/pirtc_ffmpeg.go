@@ -6,6 +6,8 @@ import (
 	"image/jpeg"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -310,6 +312,21 @@ func (pirtc *PiRTC) disableStream() error {
 }
 
 func (p *PiRTC) Snapshot(fileName string){
+	nameImg := fileName + ".jpeg"
+	dir := filepath.Dir(nameImg)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+        // Nếu chưa tồn tại, tạo thư mục
+        err := os.MkdirAll(dir, 0755)
+        if err != nil {
+            log.Printf("Failed to create directory: %v", err)
+			return
+        }
+    }
+	output, err := os.Create(nameImg)
+	if err != nil {
+		log.Printf("Failed to create file: %v",err)
+		return
+	}
 	// Initialized with 20 maxLate, my samples sometimes 10-15 packets
 	sampleBuild := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
 	decoder := vp8.NewDecoder()
@@ -345,8 +362,7 @@ func (p *PiRTC) Snapshot(fileName string){
 					return
 				}
 				// Encode to (RGB) jpeg
-				buffer := new(bytes.Buffer)
-				err = jpeg.Encode(buffer, img, nil)
+				err = jpeg.Encode(output, img, nil)
 				if err != nil {
 					return
 				}
