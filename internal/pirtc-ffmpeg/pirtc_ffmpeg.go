@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -293,48 +294,70 @@ func (pirtc *PiRTC) disableStream() error {
 
 		pirtc.ffmpegRtp = nil
 		pirtc.track = nil
+		pirtc.isStreaming = false
 	}
 
 	return nil
 }
 
-func (p *PiRTC) Snapshot(fileName string) {
-	nameImg := fileName + ".jpeg"
-	dir := filepath.Dir(nameImg)
 
-	if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
-		log.Printf("Failed to create directory: %v", err)
-		return
-	}
 
-	output, err := os.Create(nameImg)
-	if err != nil {
-		log.Printf("Failed to create file: %v", err)
-		return
-	}
-	defer output.Close()
+	func (p *PiRTC) Snapshot(fileName string) {
+		if p.isStreaming{
 
-	sampleBuilder := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
-	decoder := vp8.NewDecoder()
-
-	p.snapChan <- struct{}{}
-	defer func() { p.snapCompleteChan <- struct{}{} }()
-
-	for {
-		select {
-		case packet := <-p.packetChan:
-			sampleBuilder.Push(packet)
-			if sample := sampleBuilder.Pop(); sample != nil && isKeyframe(sample.Data) {
-				if err := p.saveJPEG(output, decoder, sample.Data); err != nil {
-					log.Println("Failed to save JPEG:", err)
-					return
-				}
-				log.Println("Image encoded successfully")
+			nameImg := fileName + ".jpeg"
+			dir := filepath.Dir(nameImg)
+		
+			if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+				log.Printf("Failed to create directory: %v", err)
 				return
 			}
+		
+			output, err := os.Create(nameImg)
+			if err != nil {
+				log.Printf("Failed to create file: %v", err)
+				return
+			}
+			defer output.Close()
+		
+			sampleBuilder := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
+			decoder := vp8.NewDecoder()
+		
+			p.snapChan <- struct{}{}
+			defer func() { p.snapCompleteChan <- struct{}{} }()
+		
+			for {
+				select {
+				case packet := <-p.packetChan:
+					sampleBuilder.Push(packet)
+					if sample := sampleBuilder.Pop(); sample != nil && isKeyframe(sample.Data) {
+						if err := p.saveJPEG(output, decoder, sample.Data); err != nil {
+							log.Println("Failed to save JPEG:", err)
+							return
+						}
+						log.Println("Image encoded successfully")
+						return
+					}
+				}
+			}
+		}else{
+			nameImg := fileName + ".jpeg"
+			dir := filepath.Dir(nameImg)
+	
+			if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+				log.Printf("Failed to create directory: %v", err)
+				return
+			}
+	
+			cmd := exec.Command("ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-vframes", "1", nameImg)
+			if err := cmd.Run(); err != nil {
+				log.Printf("Failed to capture image with ffmpeg: %v", err)
+				return
+			}
+	
+			log.Println("Image captured successfully using ffmpeg")
 		}
 	}
-}
 
 func (p *PiRTC) saveJPEG(output *os.File, decoder *vp8.Decoder, data []byte) error {
 	decoder.Init(bytes.NewReader(data), len(data))
