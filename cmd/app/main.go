@@ -216,21 +216,22 @@ func createCallBacks(ctx context.Context) map[string]func(interface{}) {
 
 	callbacks["ice-candidate"] = func(data interface{}) {}
 
-	// callbacks["take-image"] = func(data interface{}){
-	// 	log.Println("Take Image Event")
-	// 	if prtc!=nil{
-	// 		dest := env.ImagePath+ "/" +utils.GetCurrentTimeStr()
-	// 		if err := prtc.TakeShot(dest); err != nil {
-	// 			panic(err)
-	// 		}
-	// 		go func(){
-	// 			err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
-	// 			if err != nil {
-	// 				panic(err)
-	// 			}
-	// 		}()
-	// 	}
-	// }
+	callbacks["take-image"] = func(data interface{}){
+		log.Println("Take Image Event")
+		if prtc!=nil{
+			dest := env.ImagePath+ "/" +utils.GetCurrentTimeStr()
+			go prtc.Snapshot(dest)
+			// if err := prtc.Snapshot(dest); err != nil {
+			// 	panic(err)
+			// }
+			// go func(){
+			// 	err := utils.UploadImage(env.ApiUri+"camera/upload-image/", dest+".jpeg", env.ApiKey)
+			// 	if err != nil {
+			// 		panic(err)
+			// 	}
+			// }()
+		}
+	}
 
 	// callbacks["start-record"] = func(data interface{}){
 	// 	if prtc!=nil && wsClient !=nil {

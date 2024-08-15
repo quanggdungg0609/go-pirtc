@@ -3,13 +3,9 @@ package pirtc_ffmpeg
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"image/jpeg"
-	"io"
 	"log"
 	"net"
-	"os"
-	"os/exec"
 	"runtime"
 	"sync"
 
@@ -40,12 +36,17 @@ type PiWebRTC interface{
 
 type PiRTC struct {
 	usageStreamCount int
-
 	ffmpegRtp        *FFmpegRTP
 	listener         *net.UDPConn
 	track *webrtc.TrackLocalStaticRTP
+
+	stopChan         chan struct{}
+	snapChan         chan struct{}
+	snapCompleteChan chan struct{}
+	packetChan       chan *rtp.Packet
+	isStreaming      bool
+
 	Connections      map[string]*webrtc.PeerConnection
-	rtpChan chan *rtp.Packet 
 	mu               sync.Mutex
 }
 
@@ -62,6 +63,12 @@ func Init() (*PiRTC, error) {
 	pirtc := &PiRTC{
 		usageStreamCount: 0,
 		listener:         listener,
+
+		stopChan:         make(chan struct{}),
+		snapChan:         make(chan struct{}),
+		snapCompleteChan: make(chan struct{}),
+		packetChan:       make(chan *rtp.Packet, 1000),
+
 		Connections:      make(map[string]*webrtc.PeerConnection),
 	}
 	return pirtc, nil
@@ -188,39 +195,80 @@ func (pirtc *PiRTC) enableStream() error {
 			return  err
 		}
 		pirtc.track = videoTrack
+		pirtc.isStreaming = true
 		go pirtc.receiveRTP()
 	}
 	return nil
 }
 
 func (pirtc *PiRTC) receiveRTP() {
+
 	inboundRTPPacket := make([]byte, 1600)
-	var packet rtp.Packet
-	pirtc.rtpChan = make(chan *rtp.Packet)
+	StreamLoop:
 	for {
-		n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				log.Println("RTP listener closed, exiting receiveRTP")
-				return
-			}
-			log.Printf("RTP packet read error: %v\n", err)
-			continue
-		}
-		err = packet.Unmarshal(inboundRTPPacket[:n])
-		if err !=nil{
-			panic(err)
-		}
 		select {
-		case pirtc.rtpChan <- &packet:
-		default:
-			if _, err = pirtc.track.Write(inboundRTPPacket[:n]); err != nil {
-				if errors.Is(err, io.ErrClosedPipe) {
-					// The peerConnection has been closed.
-					return	
+		case <-pirtc.stopChan:
+			return
+		case <-pirtc.snapChan:
+			log.Println("Creating snapshot....")
+			for{
+				select{
+				case <-pirtc.snapCompleteChan:
+					continue StreamLoop
+				case <-pirtc.stopChan:
+					return
+				default:
+					n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
+					if err != nil {
+						if errors.Is(err, net.ErrClosed) {
+							log.Println("RTP listener closed, exiting receiveRTP")
+							return
+						}
+						log.Printf("RTP packet read error: %v\n", err)
+						continue
+					}
+					packet := &rtp.Packet{}
+					err = packet.Unmarshal(inboundRTPPacket[:n])
+					if err !=nil{
+						panic(err)
+					}
+					// Clone packet and send to snapshot
+					clonedPacket := clonePacket(packet)
+					pirtc.packetChan <- clonedPacket
+					
+					if writeErr := pirtc.track.WriteRTP(packet); writeErr != nil {
+						log.Println("StartStream VideoTrack.WriteRTP ERROR")
+						return
+					}
 				}
+			}
+		default:
+			n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Println("RTP listener closed, exiting receiveRTP")
+					return
+				}
+				log.Printf("RTP packet read error: %v\n", err)
+				continue
+			}
+			packet := &rtp.Packet{}
+			err = packet.Unmarshal(inboundRTPPacket[:n])
+			if err !=nil{
 				panic(err)
 			}
+			
+			if writeErr := pirtc.track.WriteRTP(packet); writeErr != nil {
+				log.Println("StartStream VideoTrack.WriteRTP ERROR")
+				return
+			}
+			// if _, err = pirtc.track.Write(inboundRTPPacket[:n]); err != nil {
+			// 	if errors.Is(err, io.ErrClosedPipe) {
+			// 		// The peerConnection has been closed.
+			// 		return	
+			// 	}
+			// 	panic(err)
+			// }
 		}
 		runtime.Gosched()
 	}
@@ -261,72 +309,69 @@ func (pirtc *PiRTC) disableStream() error {
 	return nil
 }
 
-func (p *PiRTC) TakeShot(fileName string) error{
-	err := os.MkdirAll("images", os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("failed to create images directory: %w", err)
-	}
-
-	if p.track == nil || p.rtpChan == nil {
-		// Command to capture image using FFmpeg
-		cmd := exec.Command("ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-vframes", "1", "images/"+fileName+".jpg")
-		
-		err := cmd.Run()
-		if err != nil {
-			return fmt.Errorf("failed to capture image using FFmpeg: %w", err)
-		}
-
-		log.Printf("Image captured using FFmpeg and saved to images/%s.jpg\n", fileName)
-		return nil
-	}
-
-	sampleBuilder := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
+func (p *PiRTC) Snapshot(fileName string){
+	// Initialized with 20 maxLate, my samples sometimes 10-15 packets
+	sampleBuild := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
 	decoder := vp8.NewDecoder()
 
-	for packet := range p.rtpChan {
-		sampleBuilder.Push(packet)
-		sample := sampleBuilder.Pop()
-		if sample == nil {
-			continue
+	p.snapChan <- struct{}{}
+	defer func() { p.snapCompleteChan <- struct{}{} }()
+
+
+	for{
+		select{
+		case RTPpacket := <-p.packetChan:
+			sampleBuild.Push(RTPpacket)
+
+			samplePop := sampleBuild.Pop()
+			if samplePop == nil {
+				continue
+			}
+
+			// Read VP8 header.
+			videoKeyframe := (samplePop.Data[0]&0x1 == 0)
+			if videoKeyframe {
+				decoder.Init(bytes.NewReader(samplePop.Data), len(samplePop.Data))
+				frameHead, err := decoder.DecodeFrameHeader()
+				if err != nil {
+					log.Println( "DecodeFrameHeader ERROR")
+					return
+				}
+				log.Printf("FrameHeader: %v",frameHead)
+				img, err := decoder.DecodeFrame()
+				if err != nil {
+
+					log.Println("DecodeFrame ERROR")
+					return
+				}
+				// Encode to (RGB) jpeg
+				buffer := new(bytes.Buffer)
+				err = jpeg.Encode(buffer, img, nil)
+				if err != nil {
+					return
+				}
+
+				log.Println("Encode img success")
+				return
+			}else{
+				continue
+			}
 		}
-
-		videoKeyframe := (sample.Data[0] & 0x1) == 0
-		if !videoKeyframe {
-			continue
-		}
-
-		decoder.Init(bytes.NewReader(sample.Data), len(sample.Data))
-
-		if _, err := decoder.DecodeFrameHeader(); err != nil {
-			return err
-		}
-
-		img, err := decoder.DecodeFrame()
-		if err != nil {
-			return err
-		}
-
-		buffer := new(bytes.Buffer)
-		if err := jpeg.Encode(buffer, img, nil); err != nil {
-			return err
-		}
-
-		if err := saveImageToFile("images/"+fileName+".jpg", buffer.Bytes()); err != nil {
-			return err
-		}
-
-		log.Printf("Image captured from RTP stream and saved to images/%s.jpg\n", fileName)
-		break
 	}
-
-	return nil
 }
 
-
-func saveImageToFile(filePath string, data []byte) error {
-	return os.WriteFile(filePath, data, 0644)
+func clonePacket(packet *rtp.Packet) *rtp.Packet {
+	buf, err := packet.Marshal()
+	if err != nil {
+		return nil
+	}
+	var p rtp.Packet
+	err = p.Unmarshal(buf)
+	if err != nil {
+		return nil
+	}
+	return &p
 }
-
 
 
 func CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription {
