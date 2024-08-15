@@ -3,4 +3,6 @@
 *.webM
 *.jpeg
 
+main
 # directory
+.env
