@@ -4,5 +4,5 @@
 *.jpeg
 
 main
-# directory
 .env
+# directory
