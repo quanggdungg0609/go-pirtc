@@ -3,6 +3,7 @@ package pirtc_ffmpeg
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -19,8 +20,12 @@ func NewFFmpegRTP(input, output string) *FFmpegRTP {
 	// cmd := exec.CommandContext(ctx, "ffmpeg", "-f", "v4l2", "-i", input, "-vf", "format=yuv420p", "-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency", "-b:v", "500k", "-f", "rtp", output+"?pkt_size=1200")
     cmd := exec.CommandContext(ctx, "ffmpeg", "-f", "v4l2", "-i", input, "-vf", "format=yuv420p", "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "3", "-b:v", "500k", "-f", "rtp", output+"?pkt_size=1200")
 
-    cmd.Stdout = os.Stdout
-    cmd.Stderr = os.Stderr
+    cmd.Stdout = io.Discard
+    cmd.Stderr = io.Discard
+
+
+    // cmd.Stdout = os.Stdout
+    // cmd.Stderr = os.Stderr
 
     return &FFmpegRTP{cmd: cmd, ctx: ctx, cancel: cancel}
 }

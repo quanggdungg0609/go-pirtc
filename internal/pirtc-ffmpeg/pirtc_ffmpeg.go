@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
+	"gitlab.lanestel.net/quangdung/go-pirtc/internal/webmsaver"
 	"golang.org/x/image/vp8"
 )
 
@@ -33,6 +33,7 @@ type PiWebRTC interface {
 	UserDisconnect(uuid string) error
 	Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error)
 	CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription
+	Close() error
 }
 
 type PiRTC struct {
@@ -46,6 +47,10 @@ type PiRTC struct {
 	snapCompleteChan chan struct{}
 	packetChan       chan *rtp.Packet
 	isStreaming      bool
+
+	recordChan chan struct{}
+	recordCompleteChan chan struct{}
+	recordPacketChan  chan *rtp.Packet
 
 	Connections map[string]*webrtc.PeerConnection
 	mu          sync.Mutex
@@ -67,6 +72,10 @@ func Init() (*PiRTC, error) {
 		snapChan:         make(chan struct{}),
 		snapCompleteChan: make(chan struct{}),
 		packetChan:       make(chan *rtp.Packet, 1000),
+
+		recordChan: make(chan struct{}),
+		recordCompleteChan: make(chan struct{}),
+		recordPacketChan: make(chan *rtp.Packet,1000),
 		Connections:      make(map[string]*webrtc.PeerConnection),
 	}, nil
 }
@@ -101,6 +110,12 @@ func (pirtc *PiRTC) UserDisconnect(uuid string) error {
 
 	delete(pirtc.Connections, uuid)
 	return nil
+}
+func CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription {
+	return webrtc.SessionDescription{
+		Type: webrtc.NewSDPType(typeSd),
+		SDP:  sdp,
+	}
 }
 
 func (pirtc *PiRTC) Answer(uuid string, offerSD webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
@@ -190,11 +205,29 @@ func (pirtc *PiRTC) receiveRTP() {
 			return
 		case <-pirtc.snapChan:
 			pirtc.handleSnapshot()
+		case <-pirtc.recordChan:
+			pirtc.handleRecord()
 		default:
 			pirtc.handleRTPPacket(inboundRTPPacket)
 		}
 
 		runtime.Gosched()
+	}
+}
+
+func (p *PiRTC) handleRecord(){
+	log.Println("Recording....")
+	for{
+		select{
+		case <-p.recordCompleteChan:
+			log.Println("Record complete")
+
+			return
+		case <-p.stopChan:
+			return
+		default:
+			p.processRecordIncomingPacket()
+		}
 	}
 }
 
@@ -208,7 +241,7 @@ func (pirtc *PiRTC) handleSnapshot() {
 		case <-pirtc.stopChan:
 			return
 		default:
-			pirtc.processIncomingPacket()
+			pirtc.processSnapshotIncomingPacket()
 		}
 	}
 }
@@ -236,7 +269,7 @@ func (pirtc *PiRTC) handleRTPPacket(inboundRTPPacket []byte) {
 	}
 }
 
-func (pirtc *PiRTC) processIncomingPacket() {
+func (pirtc *PiRTC) processSnapshotIncomingPacket() {
 	inboundRTPPacket := make([]byte, 1600)
 	n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
 	if err != nil {
@@ -256,6 +289,32 @@ func (pirtc *PiRTC) processIncomingPacket() {
 
 	clonedPacket := clonePacket(packet)
 	pirtc.packetChan <- clonedPacket
+
+	if err := pirtc.track.WriteRTP(packet); err != nil {
+		log.Println("VideoTrack.WriteRTP error")
+	}
+}
+
+func (pirtc *PiRTC) processRecordIncomingPacket() {
+	inboundRTPPacket := make([]byte, 1600)
+	n, _, err := pirtc.listener.ReadFrom(inboundRTPPacket)
+	if err != nil {
+		if errors.Is(err, net.ErrClosed) {
+			log.Println("RTP listener closed, exiting receiveRTP")
+			return
+		}
+		log.Printf("RTP packet read error: %v\n", err)
+		return
+	}
+
+	packet := &rtp.Packet{}
+	if err := packet.Unmarshal(inboundRTPPacket[:n]); err != nil {
+		log.Printf("Failed to unmarshal RTP packet: %v\n", err)
+		return
+	}
+
+	clonedPacket := clonePacket(packet)
+	pirtc.recordPacketChan <- clonedPacket
 
 	if err := pirtc.track.WriteRTP(packet); err != nil {
 		log.Println("VideoTrack.WriteRTP error")
@@ -300,64 +359,51 @@ func (pirtc *PiRTC) disableStream() error {
 	return nil
 }
 
-
-
-	func (p *PiRTC) Snapshot(fileName string) {
-		if p.isStreaming{
-
-			nameImg := fileName + ".jpeg"
-			dir := filepath.Dir(nameImg)
-		
-			if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
-				log.Printf("Failed to create directory: %v", err)
-				return
-			}
-		
-			output, err := os.Create(nameImg)
-			if err != nil {
-				log.Printf("Failed to create file: %v", err)
-				return
-			}
-			defer output.Close()
-		
-			sampleBuilder := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
-			decoder := vp8.NewDecoder()
-		
-			p.snapChan <- struct{}{}
-			defer func() { p.snapCompleteChan <- struct{}{} }()
-		
-			for {
-				select {
-				case packet := <-p.packetChan:
-					sampleBuilder.Push(packet)
-					if sample := sampleBuilder.Pop(); sample != nil && isKeyframe(sample.Data) {
-						if err := p.saveJPEG(output, decoder, sample.Data); err != nil {
-							log.Println("Failed to save JPEG:", err)
-							return
-						}
-						log.Println("Image encoded successfully")
+func (p *PiRTC)snapShot(fileName string, done chan struct{}){
+		nameImg := fileName + ".jpeg"
+		dir := filepath.Dir(nameImg)
+	
+		if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+			log.Printf("Failed to create directory: %v", err)
+			return
+		}
+	
+		output, err := os.Create(nameImg)
+		if err != nil {
+			log.Printf("Failed to create file: %v", err)
+			return
+		}
+		defer output.Close()
+	
+		sampleBuilder := samplebuilder.New(20, &codecs.VP8Packet{}, 90000)
+		decoder := vp8.NewDecoder()
+	
+		p.snapChan <- struct{}{}
+		defer func() { p.snapCompleteChan <- struct{}{} }()
+	
+		for {
+			select {
+			case packet := <-p.packetChan:
+				sampleBuilder.Push(packet)
+				if sample := sampleBuilder.Pop(); sample != nil && isKeyframe(sample.Data) {
+					if err := p.saveJPEG(output, decoder, sample.Data); err != nil {
+						log.Println("Failed to save JPEG:", err)
 						return
 					}
+					log.Println("Image encoded successfully")
+					close(done)
+					return
 				}
 			}
-		}else{
-			nameImg := fileName + ".jpeg"
-			dir := filepath.Dir(nameImg)
-	
-			if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
-				log.Printf("Failed to create directory: %v", err)
-				return
-			}
-	
-			cmd := exec.Command("ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-vframes", "1", nameImg)
-			if err := cmd.Run(); err != nil {
-				log.Printf("Failed to capture image with ffmpeg: %v", err)
-				return
-			}
-	
-			log.Println("Image captured successfully using ffmpeg")
 		}
+}
+
+func (p *PiRTC) Snapshot(fileName string, done chan struct{}) {
+	if !p.isStreaming{
+		go p.enableStream()
 	}
+	go p.snapShot(fileName, done)
+}
 
 func (p *PiRTC) saveJPEG(output *os.File, decoder *vp8.Decoder, data []byte) error {
 	decoder.Init(bytes.NewReader(data), len(data))
@@ -391,12 +437,7 @@ func clonePacket(packet *rtp.Packet) *rtp.Packet {
 	return &clonedPacket
 }
 
-func CreateSessionDescription(typeSd string, sdp string) webrtc.SessionDescription {
-	return webrtc.SessionDescription{
-		Type: webrtc.NewSDPType(typeSd),
-		SDP:  sdp,
-	}
-}
+
 
 func (pirtc *PiRTC) handleRTCP(rtpSender *webrtc.RTPSender) {
 	rtcpBuf := make([]byte, 1500)
@@ -419,4 +460,55 @@ func (pirtc *PiRTC) handleICEConnectionStateChange(uuid string, peer *webrtc.Pee
 		log.Printf("[Peer - %s]: peer closed\n", uuid)
 		pirtc.decrementStreamUsage()
 	}
+}
+
+func (p *PiRTC) Record(savePath string, stopRecordCh chan struct{}) {
+	if !p.isStreaming {
+		p.enableStream()
+	}
+	log.Println("Start recordmak")
+	p.recordChan <- struct{}{}
+	go p.record(savePath, stopRecordCh)
+}
+
+func (p *PiRTC) record(savePath string, stopRecordCh chan struct{}){
+	dir := filepath.Dir(savePath)
+		
+	if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+		log.Printf("Failed to create directory: %v", err)
+		return
+	}
+	saver:= webmsaver.NewWebmSaver()
+	defer saver.Close()
+	for{
+		select{
+		case <-stopRecordCh:
+			func() { p.recordCompleteChan <- struct{}{} }()
+			return
+		case packet:= <-p.recordPacketChan:
+			saver.PushVP8(savePath, packet)	
+		}
+		runtime.Gosched()
+	}
+}	
+
+func (p* PiRTC) Close() error{
+	err := p.ffmpegRtp.Stop()
+	if err!=nil{
+		return err
+	}
+
+	if p.listener!=nil{
+		err = p.listener.Close()
+		if err != nil{
+			return err
+		}
+	}
+
+	if p.track != nil{
+		p.track = nil
+	}
+
+	
+	return nil
 }
