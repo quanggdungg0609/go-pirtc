@@ -12,19 +12,19 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
 )
 
-type webmSaver struct {
+type WebmSaver struct {
 	videoWriter    webm.BlockWriteCloser
 	videoBuilder   *samplebuilder.SampleBuilder
 	videoTimestamp time.Duration
 }
 
-func NewWebmSaver() *webmSaver {
-	return &webmSaver{
+func NewWebmSaver() *WebmSaver {
+	return &WebmSaver{
 		videoBuilder: samplebuilder.New(20000, &codecs.VP8Packet{}, 90000),
 	}
 }
 
-func (s *webmSaver) Close() {
+func (s *WebmSaver) Close() {
 	if s.videoWriter != nil {
 		if err := s.videoWriter.Close(); err != nil {
 			panic(err)
@@ -32,7 +32,7 @@ func (s *webmSaver) Close() {
 	}
 }
 
-func (s *webmSaver) PushVP8(path string, rtpPacket *rtp.Packet) {
+func (s *WebmSaver) PushVP8(path string, rtpPacket *rtp.Packet) {
 	s.videoBuilder.Push(rtpPacket)
 		sample := s.videoBuilder.Pop()
 		if sample == nil {
@@ -60,7 +60,7 @@ func (s *webmSaver) PushVP8(path string, rtpPacket *rtp.Packet) {
 		}
 }
 
-func (s *webmSaver) initWriter(path string, width, height int) {
+func (s *WebmSaver) initWriter(path string, width, height int) {
 	dir := filepath.Dir(path)
 
 	// Create directory if not exist
