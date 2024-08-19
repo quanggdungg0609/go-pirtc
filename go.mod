@@ -35,6 +35,7 @@ require (
 	github.com/pion/turn/v3 v3.0.3 // indirect
 	github.com/pion/webrtc/v4 v4.0.0-beta.19 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/image v0.15.0 // indirect

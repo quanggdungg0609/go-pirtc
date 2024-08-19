@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -34,6 +35,8 @@ type Broker interface{
 type RTPBroker struct{
 	port int
 	address string
+
+	isBroadcast bool
 	cmd *exec.Cmd
     ctx context.Context
     cancel context.CancelFunc
@@ -58,6 +61,8 @@ func NewBroker(address string, port int) (*RTPBroker, error){
 		port: port,
 		address: address,
 		listerner: listener,
+		isBroadcast: false,
+
 		subcriptions: make(map[string]chan *rtp.Packet),
 		stopChan: make(chan struct{}),
 		cmd: nil,
@@ -69,7 +74,6 @@ func NewBroker(address string, port int) (*RTPBroker, error){
 
 func (r *RTPBroker) Start() error{
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if r.stopChan == nil{
 		r.stopChan = make(chan struct{})
@@ -89,6 +93,9 @@ func (r *RTPBroker) Start() error{
 
 		
 	}
+	r.isBroadcast = true
+	r.mu.Unlock()
+
 	go r.handleListeningRTP()
 	return nil
 }
@@ -98,6 +105,9 @@ func (r *RTPBroker) handleListeningRTP(){
 	for{
 		select{
 		case <-r.stopChan:
+			r.mu.Lock()
+			r.isBroadcast = false
+			r.mu.Unlock()
 			return
 		default:
 			n, _, err := r.listerner.ReadFrom(inboundRTPPacket)
@@ -156,13 +166,49 @@ func (r *RTPBroker) UnSub(subID string){
 	}
 }
 
-func (r *RTPBroker) Stop(){
+func (r *RTPBroker) Stop() error{
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	// stop diffusing data
-	r.stopChan <- struct{}{}
+	if r.isBroadcast{
+		r.stopChan <- struct{}{}
+		if r.cancel != nil {
+			r.cancel()
+			log.Println("Canceled FFmpeg context")
+			if err := r.cmd.Process.Signal(os.Interrupt); err != nil {
+				log.Printf("Failed to send SIGTERM to ffmpeg: %v", err)
+				return fmt.Errorf("failed to send SIGTERM to ffmpeg process: %v", err)
+			}
+			log.Println("SIGTERM signal sent to ffmpeg process")
+		}
+		r.cmd = nil
+		r.cancel = nil
+		r.ctx = nil
+	}
+	return nil
 }
 
-func (r *RTPBroker) Close(){
+func (r *RTPBroker) Dispose() error{
+	if r.isBroadcast {
+		if err := r.Stop(); err != nil {
+			return err
+		}
+	}
+
+	// Close the UDP listener
+	if err := r.listerner.Close(); err != nil {
+		return fmt.Errorf("failed to close UDP listener: %v", err)
+	}
 	
+	// Clean up subscription channels
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, ch := range r.subcriptions {
+		close(ch)
+		delete(r.subcriptions, id)
+	}
+
+	return nil
 }
 
 
